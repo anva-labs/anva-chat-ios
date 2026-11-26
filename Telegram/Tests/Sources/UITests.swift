@@ -34,11 +34,6 @@ class UITests: XCTestCase {
         deleteTestAccount(phone: "9996625296")
         app.launch()
 
-        // Welcome screen — tap Start Messaging
-        let startButton = app.buttons["Auth.Welcome.StartButton"]
-        XCTAssert(startButton.waitForExistence(timeout: 5.0))
-        startButton.tap()
-
         // Phone entry screen — enter test phone number
         let countryCodeField = app.textFields["Auth.PhoneEntry.CountryCodeField"]
         XCTAssert(countryCodeField.waitForExistence(timeout: 10.0))
