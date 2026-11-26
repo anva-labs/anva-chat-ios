@@ -610,6 +610,51 @@ public extension TelegramEngine {
             }
         }
 
+        /// Observes bots with topics across the regular and archived chat lists.
+        public func botForumChatListPeerIds() -> Signal<(peerIds: Set<EnginePeer.Id>, isLoading: Bool), NoError> {
+            let postbox = self.account.postbox
+            let predicate = ChatListFilterPredicate(
+                includePeerIds: [],
+                excludePeerIds: [],
+                pinnedPeerIds: [],
+                messageTagSummary: nil,
+                includeAdditionalPeerGroupIds: [Namespaces.PeerGroup.archive],
+                include: { peer, _, _, _, _ in
+                    return (peer as? TelegramUser)?.botInfo?.flags.contains(.hasForum) == true
+                }
+            )
+
+            func observe(count: Int) -> Signal<(peerIds: Set<EnginePeer.Id>, isLoading: Bool), NoError> {
+                return postbox.tailChatListView(groupId: .root, filterPredicate: predicate, count: count, summaryComponents: ChatListEntrySummaryComponents())
+                |> take(until: { view, _ in
+                    SignalTakeAction(passthrough: true, complete: view.earlierIndex != nil)
+                })
+                |> mapToSignal { view, _ -> Signal<(peerIds: Set<EnginePeer.Id>, isLoading: Bool), NoError> in
+                    var peerIds = Set<EnginePeer.Id>()
+                    var isLoading = false
+                    for entry in view.entries {
+                        switch entry {
+                        case let .MessageEntry(data):
+                            if let peer = data.renderedPeer.peer {
+                                peerIds.insert(peer.id)
+                            }
+                        case .HoleEntry:
+                            isLoading = true
+                        }
+                    }
+                    if view.earlierIndex != nil {
+                        return .single((peerIds, true)) |> then(observe(count: count * 2))
+                    }
+                    return .single((peerIds, isLoading))
+                }
+            }
+
+            return observe(count: 64)
+            |> distinctUntilChanged(isEqual: { lhs, rhs in
+                lhs.peerIds == rhs.peerIds && lhs.isLoading == rhs.isLoading
+            })
+        }
+
         public func peerThreads(peerId: EnginePeer.Id, isMonoforum: Bool) -> Signal<([(id: Int64, peer: EnginePeer?, data: MessageHistoryThreadData?)], Bool), NoError> {
             let key: PostboxViewKey = isMonoforum ? .savedMessagesIndex(peerId: peerId) : .messageHistoryThreadIndex(id: peerId, summaryComponents: ChatListEntrySummaryComponents(components: [:]))
             return self.account.postbox.combinedView(keys: [key])
@@ -632,20 +677,22 @@ public extension TelegramEngine {
             }
         }
 
-        public func botThreadSummaries(peerIds: Set<EnginePeer.Id>) -> Signal<[EnginePeer.Id: [Int64: EngineBotThreadSummary]], NoError> {
+        public func botThreadSummaries(peerIds: Set<EnginePeer.Id>) -> Signal<(summaries: [EnginePeer.Id: [Int64: EngineBotThreadSummary]], isLoading: Bool), NoError> {
             if peerIds.isEmpty {
-                return .single([:])
+                return .single(([:], false))
             }
             let sortedPeerIds = Array(peerIds)
             let keys: [PostboxViewKey] = sortedPeerIds.map { peerId in
                 .messageHistoryThreadIndex(id: peerId, summaryComponents: ChatListEntrySummaryComponents(components: [:]))
             }
             return self.account.postbox.combinedView(keys: keys)
-            |> map { views -> [EnginePeer.Id: [Int64: EngineBotThreadSummary]] in
+            |> map { views -> (summaries: [EnginePeer.Id: [Int64: EngineBotThreadSummary]], isLoading: Bool) in
                 var result: [EnginePeer.Id: [Int64: EngineBotThreadSummary]] = [:]
+                var isLoading = false
                 for peerId in sortedPeerIds {
                     let key: PostboxViewKey = .messageHistoryThreadIndex(id: peerId, summaryComponents: ChatListEntrySummaryComponents(components: [:]))
                     if let view = views.views[key] as? MessageHistoryThreadIndexView {
+                        isLoading = isLoading || view.isLoading
                         var peerThreads: [Int64: EngineBotThreadSummary] = [:]
                         for item in view.items {
                             let data = item.info.get(MessageHistoryThreadData.self)
@@ -654,13 +701,14 @@ public extension TelegramEngine {
                             peerThreads[item.id] = EngineBotThreadSummary(
                                 data: data,
                                 topMessage: topMessage,
-                                timestamp: timestamp
+                                timestamp: timestamp,
+                                draft: item.embeddedInterfaceState.flatMap(EngineBotChatDraft.init(storedState:))
                             )
                         }
                         result[peerId] = peerThreads
                     }
                 }
-                return result
+                return (result, isLoading)
             }
         }
 

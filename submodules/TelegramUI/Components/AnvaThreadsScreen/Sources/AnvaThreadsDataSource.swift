@@ -36,7 +36,7 @@ public enum AnvaThreadPreviewFormatter {
         guard let message else {
             return emptyFallback
         }
-        let cleanedText = AnvaThreadPreviewFormatter.cleanPreviewText(message.text)
+        let cleanedText = AnvaThreadPreviewFormatter.cleanPreviewText(Self.messageText(message))
         let mediaText = message.engineMedia.lazy.map(mediaFallback).first(where: { !$0.isEmpty }) ?? ""
         let body: String
         if !cleanedText.isEmpty {
@@ -58,6 +58,16 @@ public enum AnvaThreadPreviewFormatter {
             return youPrefix(body)
         }
         return body
+    }
+
+    static func messageText(_ message: EngineMessage) -> String {
+        if let richText = message.richText {
+            let text = richReplyQuoteFlatText(instantPageQuotableNodes(richText.instantPage.blocks))
+            if !text.isEmpty {
+                return text
+            }
+        }
+        return message.text
     }
 }
 
@@ -81,6 +91,7 @@ public struct AnvaThreadListItem: Equatable {
 public struct AnvaThreadsSnapshot: Equatable {
     public let items: [AnvaThreadListItem]
     public let totalUnreadCount: Int
+    public let isLoading: Bool
 }
 
 final class AnvaThreadsDataSource {
@@ -143,8 +154,7 @@ final class AnvaThreadsDataSource {
                             continue
                         }
                         let message = EngineMessage(message)
-                        let text = message.richText.map { richReplyQuoteFlatText(instantPageQuotableNodes($0.instantPage.blocks)) } ?? message.text
-                        let excerpt = Self.searchExcerpt(in: text.isEmpty ? message.text : text, query: query)
+                        let excerpt = Self.searchExcerpt(in: AnvaThreadPreviewFormatter.messageText(message), query: query)
                         matches.updateValue(excerpt.isEmpty ? nil : MessageMatch(key: key, message: message, excerpt: excerpt), forKey: message.id)
                     }
                     let oldestIndex = result.messages.last?.index
@@ -182,21 +192,21 @@ final class AnvaThreadsDataSource {
         let context = self.context
         let accountPeerId = context.account.peerId
 
-        let trackedAndPresentation = combineLatest(
-            self.store.threads,
+        return combineLatest(
+            self.store.threadState,
+            context.engine.messages.botForumChatListPeerIds(),
             context.sharedContext.presentationData
         )
-
-        return trackedAndPresentation
-        |> mapToSignal { [weak self] trackedItems, presentationData -> Signal<AnvaThreadsSnapshot, NoError> in
+        |> mapToSignal { [weak self] threadState, discovery, presentationData -> Signal<AnvaThreadsSnapshot, NoError> in
             let strings = AnvaStrings(strings: presentationData.strings)
-            guard !trackedItems.isEmpty else {
-                return .single(AnvaThreadsSnapshot(items: [], totalUnreadCount: 0))
+            let localKeys = threadState.items.compactMap { $0.lastLocalSendAt != nil ? $0.key : nil }
+            guard !localKeys.isEmpty || !discovery.peerIds.isEmpty else {
+                return .single(AnvaThreadsSnapshot(items: [], totalUnreadCount: 0, isLoading: discovery.isLoading))
             }
 
-            let uniquePeerIds = Array(Set(trackedItems.map(\.key.peerId)))
-            let forumPeerIds = Set(trackedItems.compactMap { $0.key.threadId != nil ? $0.key.peerId : nil })
-            let mainChatPeerIds = Array(Set(trackedItems.compactMap { $0.key.threadId == nil ? $0.key.peerId : nil }))
+            let uniquePeerIds = Set(localKeys.map(\.peerId)).union(discovery.peerIds)
+            let forumPeerIds = Set(localKeys.compactMap { $0.threadId != nil ? $0.peerId : nil }).union(discovery.peerIds)
+            let mainChatPeerIds = Array(Set(localKeys.compactMap { $0.threadId == nil ? $0.peerId : nil }))
 
             let peersSignal = context.engine.data.subscribe(
                 EngineDataMap(uniquePeerIds.map { TelegramEngine.EngineData.Item.Peer.Peer(id: $0) })
@@ -223,13 +233,19 @@ final class AnvaThreadsDataSource {
                 forumSummariesSignal,
                 mainTopMessagesSignal,
                 mainReadCountersSignal,
-                context.engine.messages.botChatDrafts(conversations: trackedItems.map { ($0.key.peerId, $0.key.threadId) })
+                context.engine.messages.botChatDrafts(conversations: localKeys.map { ($0.peerId, $0.threadId) })
             )
-            |> map { peersMap, forumSummaries, mainTopMessages, mainReadCounters, drafts -> AnvaThreadsSnapshot in
+            |> map { peersMap, forum, mainTopMessages, mainReadCounters, drafts -> AnvaThreadsSnapshot in
+                var syncedKeys = Set<AnvaTrackedThread.Key>()
+                for (peerId, summaries) in forum.summaries where discovery.peerIds.contains(peerId) {
+                    for threadId in summaries.keys where threadId > 1 && threadId != EngineMessage.newTopicThreadId {
+                        syncedKeys.insert(AnvaTrackedThread.Key(peerId: peerId, threadId: threadId))
+                    }
+                }
                 var listItems: [AnvaThreadListItem] = []
                 var totalUnread = 0
 
-                for tracked in trackedItems {
+                for tracked in threadState.visibleThreads(syncedKeys: syncedKeys) {
                     let peerId = tracked.key.peerId
                     let botPeer = peersMap[peerId] ?? nil
                     if case let .user(user) = botPeer, let botInfo = user.botInfo,
@@ -261,9 +277,10 @@ final class AnvaThreadsDataSource {
                     let topMessage: EngineMessage?
                     let activityTimestamp: Int32
                     let incomingUnreadCount: Int32
+                    var draft = drafts[peerId]?[tracked.key.threadId]
 
                     if let threadId = tracked.key.threadId {
-                        let summary = forumSummaries[peerId]?[threadId]
+                        let summary = forum.summaries[peerId]?[threadId]
                         topicData = summary?.data
                         if topicData == nil {
                             self?.backfillThreadInfoIfNeeded(key: tracked.key)
@@ -271,6 +288,9 @@ final class AnvaThreadsDataSource {
                         topMessage = summary?.topMessage
                         activityTimestamp = summary?.timestamp ?? 0
                         incomingUnreadCount = topicData?.incomingUnreadCount ?? 0
+                        if let summary {
+                            draft = summary.draft
+                        }
                     } else {
                         topicData = nil
                         topMessage = mainTopMessages[peerId] ?? nil
@@ -293,7 +313,7 @@ final class AnvaThreadsDataSource {
                         youPrefix: { strings.youPrefix($0) },
                         emptyFallback: strings.noMessages
                     )
-                    let lastActivityTimestamp = max(activityTimestamp, tracked.lastLocalSendAt, tracked.addedAt)
+                    let lastActivityTimestamp = max(activityTimestamp, tracked.lastLocalSendAt ?? 0, tracked.addedAt)
                     let unreadCount = max(0, Int(incomingUnreadCount))
                     totalUnread += unreadCount
                     listItems.append(AnvaThreadListItem(
@@ -306,7 +326,7 @@ final class AnvaThreadsDataSource {
                         topicIconFileId: topicData?.info.icon,
                         title: title,
                         previewText: previewText,
-                        draft: drafts[peerId]?[tracked.key.threadId],
+                        draft: draft,
                         lastActivityTimestamp: lastActivityTimestamp,
                         unreadCount: unreadCount,
                         isPinned: tracked.isPinned,
@@ -336,9 +356,10 @@ final class AnvaThreadsDataSource {
                     return (lhs.threadId ?? -1) < (rhs.threadId ?? -1)
                 }
 
-                return AnvaThreadsSnapshot(items: listItems, totalUnreadCount: totalUnread)
+                return AnvaThreadsSnapshot(items: listItems, totalUnreadCount: totalUnread, isLoading: discovery.isLoading || forum.isLoading)
             }
         }
+        |> distinctUntilChanged
     }
 
     private func backfillThreadInfoIfNeeded(key: AnvaTrackedThread.Key) {

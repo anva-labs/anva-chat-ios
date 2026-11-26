@@ -27,7 +27,7 @@ public final class AnvaThreadsScreen: ViewController, UITableViewDataSource, UIT
     private var renameTopicDisposable = MetaDisposable()
     private let messageSearchDisposable = MetaDisposable()
 
-    private var snapshot = AnvaThreadsSnapshot(items: [], totalUnreadCount: 0)
+    private var snapshot = AnvaThreadsSnapshot(items: [], totalUnreadCount: 0, isLoading: true)
     private var filteredItems: [AnvaThreadListItem] = []
     private var searchQuery: String = ""
     private var messageSearchRequest: (query: String, keys: Set<AnvaTrackedThread.Key>)?
@@ -486,7 +486,9 @@ public final class AnvaThreadsScreen: ViewController, UITableViewDataSource, UIT
             let strings = AnvaStrings(strings: self.presentationData.strings)
             if self.filteredItems.isEmpty, self.messageMatches.isEmpty, self.activeSearchBarNode?.activity != true {
                 self.emptyView.isHidden = false
-                if self.snapshot.items.isEmpty {
+                if self.snapshot.items.isEmpty && self.snapshot.isLoading {
+                    self.emptyView.configure(title: nil, body: nil, isLoading: true)
+                } else if self.snapshot.items.isEmpty {
                     self.emptyView.configure(
                         title: strings.emptyTitle,
                         body: strings.emptyBody,

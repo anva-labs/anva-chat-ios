@@ -100,14 +100,17 @@ public struct EngineBotThreadSummary: Equatable {
     public let data: MessageHistoryThreadData?
     public let topMessage: EngineMessage?
     public let timestamp: Int32
+    public let draft: EngineBotChatDraft?
 
     public init(
         data: MessageHistoryThreadData?,
         topMessage: EngineMessage?,
-        timestamp: Int32
+        timestamp: Int32,
+        draft: EngineBotChatDraft?
     ) {
         self.data = data
         self.topMessage = topMessage
         self.timestamp = timestamp
+        self.draft = draft
     }
 }
