@@ -11,28 +11,29 @@ import LegacyMediaPickerUI
 import MediaEditor
 
 extension ChatControllerImpl {
-    func displayPasteMenu(_ subjects: [MediaPickerScreenImpl.Subject.Media], includeInputText: Bool = true) {
+    func displayPasteMenu(_ subjects: [MediaPickerScreenImpl.Subject.Media], isFromSystemShare: Bool = false) {
         let _ = (self.context.sharedContext.accountManager.transaction { transaction -> GeneratedMediaStoreSettings in
             let entry = transaction.getSharedData(ApplicationSpecificSharedDataKeys.generatedMediaStoreSettings)?.get(GeneratedMediaStoreSettings.self)
             return entry ?? GeneratedMediaStoreSettings.defaultSettings
         }
         |> deliverOnMainQueue).startStandalone(next: { [weak self] settings in
-            if let strongSelf = self, let peer = strongSelf.presentationInterfaceState.renderedPeer?.peer {
+            if let strongSelf = self, let peerId = strongSelf.chatLocation.peerId {
                 var enableMultiselection = true
                 if strongSelf.presentationInterfaceState.interfaceState.postSuggestionState != nil {
                     enableMultiselection = false
                 }
-                let inputText = includeInputText ? strongSelf.presentationInterfaceState.interfaceState.effectiveInputState.inputText : NSAttributedString()
+                let inputText = isFromSystemShare ? NSAttributedString() : strongSelf.presentationInterfaceState.interfaceState.effectiveInputState.inputText
                 
                 strongSelf.chatDisplayNode.dismissInput()
                 let controller = mediaPasteboardScreen(
                     context: strongSelf.context,
                     updatedPresentationData: strongSelf.updatedPresentationData,
-                    peer: EnginePeer(peer),
+                    peerId: peerId,
                     subjects: subjects,
                     presentMediaPicker: { [weak self] subject, saveEditedPhotos, bannedSendPhotos, bannedSendVideos, present in
                         if let strongSelf = self {
                             strongSelf.presentMediaPicker(subject: subject, saveEditedPhotos: saveEditedPhotos, bannedSendPhotos: bannedSendPhotos, bannedSendVideos: bannedSendVideos, enableMultiselection: enableMultiselection, present: { controller, mediaPickerContext in
+                                controller.isFromSystemShare = isFromSystemShare
                                 if !inputText.string.isEmpty {
                                     mediaPickerContext?.setCaption(inputText)
                                 }
@@ -51,7 +52,8 @@ extension ChatControllerImpl {
                         }
                     },
                     getSourceRect: nil,
-                    customEmojiAvailable: strongSelf.presentationInterfaceState.customEmojiAvailable
+                    customEmojiAvailable: strongSelf.presentationInterfaceState.customEmojiAvailable,
+                    focusCaption: isFromSystemShare
                 )
                 controller.navigationPresentation = .flatModal
                 strongSelf.push(controller)

@@ -316,7 +316,7 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
             rootTabController.selectedIndex = index
         }
         anvaThreadsController.openBotNewThread(botPeerId: botPeerId, sharedLink: sharedLink, presentPhotoPreview: sharedPhotos.isEmpty ? nil : { chat in
-            (chat as? ChatControllerImpl)?.displayPasteMenu(sharedPhotos.map { .image($0) }, includeInputText: false)
+            (chat as? ChatControllerImpl)?.displayPasteMenu(sharedPhotos.map { .image($0) }, isFromSystemShare: true)
         })
     }
     

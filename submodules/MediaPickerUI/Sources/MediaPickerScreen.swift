@@ -375,6 +375,7 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
     public var presentFilePicker: () -> Void = {}
     public var openAvatarEditor: () -> Void = {}
     public var showsAvatarEmojiEntry = true
+    public var isFromSystemShare = false
     
     private var completed = false {
         didSet {
@@ -3359,7 +3360,11 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
                 moreIsVisible = true
             }
         } else if case let .media(media) = self.subject {
-            self.titleView.title = media.count == 1 ? self.presentationData.strings.Attachment_Pasteboard : self.presentationData.strings.Attachment_SelectedMedia(count)
+            if self.isFromSystemShare {
+                self.titleView.title = self.presentationData.strings.Share_Title
+            } else {
+                self.titleView.title = media.count == 1 ? self.presentationData.strings.Attachment_Pasteboard : self.presentationData.strings.Attachment_SelectedMedia(count)
+            }
             self.titleView.segmentsHidden = true
             moreIsVisible = true
         } else {
