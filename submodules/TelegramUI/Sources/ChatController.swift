@@ -9232,7 +9232,9 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 defaultThreadId = EngineMessage.newTopicThreadId
             }
         case let .replyThread(replyThreadMessage):
-            if let effectiveMessageId = replyThreadMessage.effectiveMessageId {
+            if replyThreadMessage.threadId == EngineMessage.newTopicThreadId {
+                defaultThreadId = EngineMessage.newTopicThreadId
+            } else if let effectiveMessageId = replyThreadMessage.effectiveMessageId {
                 defaultReplyMessageSubject = EngineMessageReplySubject(messageId: effectiveMessageId, quote: nil, innerSubject: nil)
             }
         case .customChatContents:

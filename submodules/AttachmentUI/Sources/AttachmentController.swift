@@ -1828,6 +1828,15 @@ public class AttachmentController: ViewController, MinimizableController {
     }
 
     public var ensureUnfocused = true
+    public var focusCaptionOnAppear = false
+
+    public override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        if self.focusCaptionOnAppear {
+            self.focusCaptionOnAppear = false
+            self.node.panel.focusCaption()
+        }
+    }
 
     public func requestMinimize(topEdgeOffset: CGFloat?, initialVelocity: CGFloat?) {
         self.node.minimize()

@@ -12,17 +12,18 @@ import LegacyComponents
 public func mediaPasteboardScreen(
     context: AccountContext,
     updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)? = nil,
-    peer: EnginePeer,
+    peerId: EnginePeer.Id,
     subjects: [MediaPickerScreenImpl.Subject.Media],
     presentMediaPicker: @escaping (_ subject: MediaPickerScreenImpl.Subject, _ saveEditedPhotos: Bool, _ bannedSendPhotos: (Int32, Bool)?, _ bannedSendVideos: (Int32, Bool)?, _ present: @escaping (MediaPickerScreenImpl, AttachmentMediaPickerContext?) -> Void) -> Void,
     getSourceRect: (() -> CGRect?)? = nil,
-    customEmojiAvailable: Bool = true
+    customEmojiAvailable: Bool = true,
+    focusCaption: Bool = false
 ) -> ViewController {
     let controller = AttachmentController(
         context: context,
         updatedPresentationData: updatedPresentationData,
         style: .glass,
-        chatLocation: .peer(id: peer.id),
+        chatLocation: .peer(id: peerId),
         buttons: [.standalone],
         initialButton: .standalone,
         customEmojiAvailable: customEmojiAvailable
@@ -34,6 +35,7 @@ public func mediaPasteboardScreen(
         return true
     }
     controller.updateSelectionCount(subjects.count)
+    controller.focusCaptionOnAppear = focusCaption
     controller.getSourceRect = getSourceRect
     return controller
 }

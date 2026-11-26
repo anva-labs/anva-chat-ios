@@ -2347,6 +2347,13 @@ final class AttachmentPanel: ASDisplayNode, ASScrollViewDelegate, ASGestureRecog
         }
     }
 
+    func focusCaption() {
+        guard self.isSelecting else {
+            return
+        }
+        self.textInputPanelNode?.ensureFocused()
+    }
+
     private func loadTextNodeIfNeeded() {
         if let _ = self.textInputPanelNode {
         } else {
