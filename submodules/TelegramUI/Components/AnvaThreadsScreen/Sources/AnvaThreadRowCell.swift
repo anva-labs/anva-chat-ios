@@ -109,8 +109,26 @@ final class AnvaThreadRowCell: UITableViewCell {
         self.timeLabel.text = strings.formatTimestamp(messageMatch?.message.timestamp ?? item.lastActivityTimestamp)
         self.timeLabel.textColor = theme.chatList.dateTextColor
 
-        self.subtitleLabel.text = messageMatch?.excerpt ?? item.previewText
         self.subtitleLabel.textColor = theme.chatList.messageTextColor
+        if let messageMatch {
+            self.subtitleLabel.text = messageMatch.excerpt
+        } else if let draft = item.draft {
+            let text: String
+            switch draft {
+            case let .text(draftText):
+                text = draftText.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            case let .media(mediaType):
+                text = strings.draftMediaLabel(mediaType)
+            }
+            let subtitle = NSMutableAttributedString(
+                string: text.isEmpty ? strings.draftLabel : strings.draftLabel + ": ",
+                attributes: [.foregroundColor: theme.chatList.messageDraftTextColor]
+            )
+            subtitle.append(NSAttributedString(string: text, attributes: [.foregroundColor: theme.chatList.messageTextColor]))
+            self.subtitleLabel.attributedText = subtitle
+        } else {
+            self.subtitleLabel.text = item.previewText
+        }
 
         if self.unreadCount > 0 {
             self.unreadBadgeView.isHidden = false

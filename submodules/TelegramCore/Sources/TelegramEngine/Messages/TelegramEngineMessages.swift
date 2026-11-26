@@ -664,6 +664,28 @@ public extension TelegramEngine {
             }
         }
 
+        /// Observes saved drafts by conversation, including topics outside the loaded forum list.
+        public func botChatDrafts(conversations: [(peerId: EnginePeer.Id, threadId: Int64?)]) -> Signal<[EnginePeer.Id: [Int64?: EngineBotChatDraft]], NoError> {
+            guard !conversations.isEmpty else {
+                return .single([:])
+            }
+            let keys = conversations.map { PostboxViewKey.chatInterfaceState(peerId: $0.peerId, threadId: $0.threadId) }
+            return self.account.postbox.combinedView(keys: keys)
+            |> map { views -> [EnginePeer.Id: [Int64?: EngineBotChatDraft]] in
+                var drafts: [EnginePeer.Id: [Int64?: EngineBotChatDraft]] = [:]
+                for (conversation, key) in zip(conversations, keys) {
+                    guard let view = views.views[key] as? ChatInterfaceStateView,
+                          let storedState = view.value,
+                          let draft = EngineBotChatDraft(storedState: storedState) else {
+                        continue
+                    }
+                    drafts[conversation.peerId, default: [:]][conversation.threadId] = draft
+                }
+                return drafts
+            }
+            |> distinctUntilChanged
+        }
+
         public func callList(scope: EngineCallList.Scope, index: EngineMessage.Index, itemCount: Int) -> Signal<EngineCallList, NoError> {
             return self.account.viewTracker.callListView(
                 type: scope == .all ? .all : .missed,

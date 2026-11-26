@@ -2,16 +2,22 @@ import Foundation
 
 final class MutableChatInterfaceStateView: MutablePostboxView {
     fileprivate let peerId: PeerId
+    private let threadId: Int64?
     fileprivate var value: StoredPeerChatInterfaceState?
     
-    init(postbox: PostboxImpl, peerId: PeerId) {
+    init(postbox: PostboxImpl, peerId: PeerId, threadId: Int64?) {
         self.peerId = peerId
+        self.threadId = threadId
         
         self.reload(postbox: postbox)
     }
     
     private func reload(postbox: PostboxImpl) {
-        self.value = postbox.peerChatInterfaceStateTable.get(self.peerId)
+        if let threadId = self.threadId {
+            self.value = postbox.peerChatThreadInterfaceStateTable.get(PeerChatThreadId(peerId: self.peerId, threadId: threadId))
+        } else {
+            self.value = postbox.peerChatInterfaceStateTable.get(self.peerId)
+        }
     }
     
     func replay(postbox: PostboxImpl, transaction: PostboxTransaction) -> Bool {

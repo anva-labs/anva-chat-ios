@@ -77,6 +77,25 @@ public final class AnvaBotThreadActivityCenter {
     }
 }
 
+public enum EngineBotChatDraft: Equatable {
+    case text(String)
+    case media(EngineChatList.MediaDraftContentType)
+
+    init?(storedState: StoredPeerChatInterfaceState) {
+        guard storedState.overrideChatTimestamp != nil,
+              let state = _internal_decodeStoredChatInterfaceState(state: storedState) else {
+            return nil
+        }
+        if let mediaType = state.mediaDraftState?.contentType {
+            self = .media(mediaType)
+        } else if let text = state.synchronizeableInputState?.text {
+            self = .text(text)
+        } else {
+            return nil
+        }
+    }
+}
+
 public struct EngineBotThreadSummary: Equatable {
     public let data: MessageHistoryThreadData?
     public let topMessage: EngineMessage?
