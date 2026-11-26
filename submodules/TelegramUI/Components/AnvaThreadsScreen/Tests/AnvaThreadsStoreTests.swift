@@ -115,8 +115,79 @@ final class AnvaThreadsStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.currentThreads.first(where: { $0.key == key })?.isPinned, true)
     }
 
+    func testSyncedThreadStaysHiddenAfterReloadUntilSendingLocally() {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appendingPathComponent("anva-threads.json")
+        let key = AnvaTrackedThread.Key(peerId: self.botA, threadId: 42)
+        let store = AnvaThreadsStore(accountPeerId: self.accountId, fileURL: fileURL, activityEvents: .never())
+        XCTAssertEqual(self.visibleThreads(in: store, syncedKeys: [key]).map(\.key), [key])
+
+        store.togglePin(key: key, timestamp: 300)
+        store.flushPendingWritesForTesting()
+        let pinned = self.visibleThreads(in: store, syncedKeys: [key])
+        XCTAssertEqual(pinned.map(\.key), [key])
+        XCTAssertEqual(pinned.first?.isPinned, true)
+
+        store.remove(key: key)
+        store.flushPendingWritesForTesting()
+        let reloaded = AnvaThreadsStore(accountPeerId: self.accountId, fileURL: fileURL, activityEvents: .never())
+        XCTAssertEqual(self.visibleThreads(in: reloaded, syncedKeys: [key]), [])
+
+        reloaded.recordInteraction(peerId: key.peerId, threadId: key.threadId, timestamp: 400)
+        reloaded.flushPendingWritesForTesting()
+        XCTAssertEqual(self.visibleThreads(in: reloaded, syncedKeys: [key]).map(\.key), [key])
+    }
+
+    private func visibleThreads(in store: AnvaThreadsStore, syncedKeys: Set<AnvaTrackedThread.Key>) -> [AnvaTrackedThread] {
+        var threads: [AnvaTrackedThread] = []
+        let disposable = (store.threadState |> take(1)).startStrict(next: { state in
+            threads = state.visibleThreads(syncedKeys: syncedKeys)
+        })
+        disposable.dispose()
+        return threads
+    }
+
     func testPreviewTextStripsMarkdownNoise() {
         let raw = "**Done.**\n- Keep threads separate\n```swift\nlet x = 1\n```\n`ok`"
         XCTAssertEqual(AnvaThreadPreviewFormatter.cleanPreviewText(raw), "Done. - Keep threads separate ok")
+    }
+
+    func testRichBotReplySuppliesHomePreview() {
+        let instantPage = InstantPage(
+            blocks: [.paragraph(.bold(.plain("Ready to review")))],
+            media: [:], isComplete: true, rtl: false, url: "", views: nil
+        )
+        let message = EngineMessage(
+            stableId: 1,
+            stableVersion: 0,
+            id: EngineMessage.Id(peerId: self.botA, namespace: Namespaces.Message.Cloud, id: 42),
+            globallyUniqueId: nil,
+            groupingKey: nil,
+            groupInfo: nil,
+            threadId: 10,
+            timestamp: 100,
+            flags: [.Incoming],
+            tags: [],
+            globalTags: [],
+            localTags: [],
+            customTags: [],
+            forwardInfo: nil,
+            author: nil,
+            text: "",
+            attributes: [RichTextMessageAttribute(instantPage: instantPage, fullInstantPage: nil)],
+            media: [],
+            peers: [:],
+            associatedMessages: [:],
+            associatedMessageIds: [],
+            associatedMedia: [:],
+            associatedThreadInfo: nil,
+            associatedStories: [:]
+        )
+
+        XCTAssertEqual(AnvaThreadPreviewFormatter.formatPreview(
+            message: message, accountPeerId: self.accountId, mediaFallback: { _ in "" },
+            youPrefix: { "You: \($0)" }, emptyFallback: "No messages yet"
+        ), "Ready to review")
     }
 }

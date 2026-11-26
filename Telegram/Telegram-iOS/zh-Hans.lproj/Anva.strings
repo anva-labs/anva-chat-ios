@@ -6,7 +6,7 @@
 "Anva.SearchPlaceholder" = "搜索";
 "Anva.MessageSearchResults" = "消息";
 "Anva.EmptyTitle" = "还没有对话";
-"Anva.EmptyBody" = "选择一个 Bot 开始新对话。\n仅展示在这里新建或聊过的 Bot 对话，不会导入历史对话。";
+"Anva.EmptyBody" = "这个 Telegram 账号下的 Bot 话题会自动同步到这里。";
 "Anva.EmptyAction" = "新建对话";
 "Anva.NewThreadMenuAction" = "新建";
 "Anva.MessageActions" = "消息操作";
