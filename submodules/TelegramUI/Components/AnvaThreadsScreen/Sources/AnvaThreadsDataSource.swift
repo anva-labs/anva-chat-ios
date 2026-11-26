@@ -108,9 +108,9 @@ final class AnvaThreadsDataSource {
         let matches: [EngineMessage.Id: MessageMatch?]
         let hasMore: Bool
 
-        static func orderedMatches(in pages: [AnvaTrackedThread.Key: MessageSearchPage]) -> [MessageMatch] {
+        static func orderedMatches(in pages: [EnginePeer.Id: MessageSearchPage]) -> [MessageMatch] {
             // Any unrequested page may still contain matches older than its last returned message.
-            // Keep those positions out of the list until every conversation has searched that far.
+            // Keep those positions out of the list until every bot chat has searched that far.
             let boundary = pages.values.compactMap { $0.hasMore ? $0.oldestIndex : nil }.max()
             var seenIds = Set<EngineMessage.Id>()
             return pages.values.flatMap { $0.matches.values.compactMap { $0 } }
@@ -132,21 +132,23 @@ final class AnvaThreadsDataSource {
         self.store = store
     }
 
-    func searchMessages(query: String, conversations: [AnvaTrackedThread.Key], pages: [AnvaTrackedThread.Key: MessageSearchPage]) -> Signal<[AnvaTrackedThread.Key: MessageSearchPage], NoError> {
+    func searchMessages(query: String, visibleThreads: Set<AnvaTrackedThread.Key>, pages: [EnginePeer.Id: MessageSearchPage]) -> Signal<[EnginePeer.Id: MessageSearchPage], NoError> {
         let engine = self.context.engine.messages
         let batchSize = 8
-        let remaining = conversations.filter { pages[$0]?.hasMore != false }
-        var results: Signal<[AnvaTrackedThread.Key: MessageSearchPage], NoError> = .single(pages)
+        let peerIds = Set(visibleThreads.map(\.peerId))
+        let remaining = Array(peerIds.filter { pages[$0]?.hasMore != false })
+        var results: Signal<[EnginePeer.Id: MessageSearchPage], NoError> = .single(pages)
         for offset in stride(from: 0, to: remaining.count, by: batchSize) {
             let batch = remaining[offset ..< min(offset + batchSize, remaining.count)]
-            let searches = batch.map { key -> Signal<(AnvaTrackedThread.Key, MessageSearchPage), NoError> in
-                let previous = pages[key]
-                let location = SearchMessagesLocation.peer(peerId: key.peerId, fromId: nil, tags: nil, reactions: nil, threadId: key.threadId, minDate: nil, maxDate: nil)
+            let searches = batch.map { peerId -> Signal<(EnginePeer.Id, MessageSearchPage), NoError> in
+                let previous = pages[peerId]
+                let location = SearchMessagesLocation.peer(peerId: peerId, fromId: nil, tags: nil, reactions: nil, threadId: nil, minDate: nil, maxDate: nil)
                 return engine.searchMessages(location: location, query: query, state: previous?.state, limit: 20)
                 |> map { result, state in
                     var matches: [EngineMessage.Id: MessageMatch?] = [:]
                     for message in result.messages {
-                        guard message.id.peerId == key.peerId, message.threadId == nil || message.threadId == key.threadId else {
+                        let key = AnvaTrackedThread.Key(peerId: message.id.peerId, threadId: message.threadId)
+                        guard key.peerId == peerId, visibleThreads.contains(key) else {
                             continue
                         }
                         if let previousMatch = previous?.matches[message.id] {
@@ -158,7 +160,7 @@ final class AnvaThreadsDataSource {
                         matches.updateValue(excerpt.isEmpty ? nil : MessageMatch(key: key, message: message, excerpt: excerpt), forKey: message.id)
                     }
                     let oldestIndex = result.messages.last?.index
-                    return (key, MessageSearchPage(
+                    return (peerId, MessageSearchPage(
                         state: state,
                         oldestIndex: oldestIndex,
                         matches: matches,
@@ -169,8 +171,8 @@ final class AnvaThreadsDataSource {
             results = results |> mapToSignal { previous in
                 return combineLatest(searches) |> map { updates in
                     var pages = previous
-                    for (key, page) in updates {
-                        pages[key] = page
+                    for (peerId, page) in updates {
+                        pages[peerId] = page
                     }
                     return pages
                 }
