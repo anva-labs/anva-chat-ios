@@ -41,14 +41,17 @@ final class ShareScreenState {
     private(set) var query = ""
     private(set) var filterId: Int32 = 0
     private(set) var filters: [ChatListFilter] = []
-    private(set) var peers: [EnginePeer] = []
+    private(set) var peers: [EnginePeer] = [] {
+        didSet { self.updateGridPeers() }
+    }
     private(set) var recommendations: [EnginePeer] = []
     private(set) var accountPeer: EnginePeer?
     private(set) var presences: [EnginePeer.Id: EnginePeer.Presence] = [:]
     private(set) var participantCounts: [EnginePeer.Id: Int] = [:]
     private(set) var isLoading = true
     private(set) var createdGroup: EnginePeer?
-    private(set) var foundPeers: [EnginePeer] = []
+    private var foundPeers: [EnginePeer] = []
+    private(set) var gridPeers: (bots: [EnginePeer], others: [EnginePeer]) = ([], [])
     var didPlayRepostAnimation = false
     var firstLoadCompleted: (() -> Void)?
     var appearanceAnimationStart: Double?
@@ -56,16 +59,30 @@ final class ShareScreenState {
     private(set) var didCompleteFirstLoad = false
     private let creationTimestamp = CACurrentMediaTime()
 
-    var gridPeers: [EnginePeer] {
-        guard !self.foundPeers.isEmpty else { return self.peers }
+    private static func splitBotRecipients(_ peers: [EnginePeer]) -> (bots: [EnginePeer], others: [EnginePeer]) {
+        var bots: [EnginePeer] = []
+        var others: [EnginePeer] = []
+        for peer in peers {
+            if case let .user(user) = peer, user.botInfo != nil {
+                bots.append(peer)
+            } else {
+                others.append(peer)
+            }
+        }
+        return (bots, others)
+    }
+
+    private func updateGridPeers() {
         let foundIds = Set(self.foundPeers.map(\.id))
-        return self.foundPeers + self.peers.filter { !foundIds.contains($0.id) }
+        let candidates = self.foundPeers + self.peers.filter { !foundIds.contains($0.id) }
+        self.gridPeers = Self.splitBotRecipients(candidates)
     }
 
     func noteSelectedInSearch(_ peer: EnginePeer) {
         guard self.isSearching, self.selection.contains(peer.id), peer.id != self.context.account.peerId else { return }
         self.foundPeers.removeAll(where: { $0.id == peer.id })
         self.foundPeers.insert(peer, at: 0)
+        self.updateGridPeers()
     }
     private(set) var messagingRequirements: [EnginePeer.Id: ShareScreenMessagingRequirement] = [:]
     private var requirementPeerIds = Set<EnginePeer.Id>()
@@ -269,7 +286,9 @@ final class ShareScreenState {
         |> deliverOnMainQueue).start(next: { [weak self] recent in
             guard let self else { return }
             if case let .peers(peers) = recent {
-                self.recommendations = peers.map(EnginePeer.init).filter { canSendMessagesToPeer($0) && $0.id != context.account.peerId }
+                let recipients = peers.map(EnginePeer.init).filter { canSendMessagesToPeer($0) && $0.id != context.account.peerId }
+                let (bots, others) = Self.splitBotRecipients(recipients)
+                self.recommendations = bots + others
             } else {
                 self.recommendations = []
             }
@@ -393,6 +412,13 @@ final class ShareScreenState {
 
     private(set) var forumPeer: EnginePeer?
     private(set) var forumTopics: [Topic] = []
+    var selectableForumTopics: [Topic] {
+        guard let peer = self.forumPeer, case let .user(user) = peer, let botInfo = user.botInfo,
+              botInfo.flags.contains(.hasForum), botInfo.flags.contains(.forumManagedByUser) else {
+            return self.forumTopics
+        }
+        return [Topic(id: EngineMessage.newTopicThreadId, peer: peer, data: nil)] + self.forumTopics
+    }
     private(set) var topicsLoading = false
     private let topicsDisposable = MetaDisposable()
     private var topicsCache: [EnginePeer.Id: [Topic]] = [:]
@@ -459,7 +485,8 @@ final class ShareScreenState {
 
     func selectTopic(_ topic: Topic) {
         guard let peer = self.forumPeer else { return }
-        self.selection.toggle(peer, topicId: topic.id, topicData: topic.data, topicPeer: topic.data == nil ? topic.peer : nil)
+        let topicPeer = topic.data == nil && topic.id != EngineMessage.newTopicThreadId ? topic.peer : nil
+        self.selection.toggle(peer, topicId: topic.id, topicData: topic.data, topicPeer: topicPeer)
         self.noteSelectedInSearch(peer)
         self.closeForum()
         if self.isSearching && !self.query.isEmpty {
@@ -476,8 +503,8 @@ final class ShareScreenState {
         self.isSearching = false
         self.query = ""
         self.filterId = 0
-        self.peers.removeAll(where: { $0.id == peer.id })
-        self.peers.insert(peer, at: 0)
+        let (bots, others) = Self.splitBotRecipients([peer] + self.peers.filter { $0.id != peer.id })
+        self.peers = bots + others
         self.reload(keepPeers: true, animated: true)
     }
 
@@ -573,7 +600,8 @@ final class ShareScreenState {
             result.removeAll(where: { $0.id == createdGroup.id })
             result.insert(createdGroup, at: 0)
         }
-        return result
+        let (bots, others) = Self.splitBotRecipients(result)
+        return bots + others
     }
 
     private func reload(keepPeers: Bool = false, animated: Bool = false) {

@@ -941,6 +941,9 @@ struct AllWidgets: WidgetBundle {
    var body: some Widget {
         Static_Widget()
         Static_AvatarsWidget()
+        if #available(iOS 18.0, *) {
+            AnvaNewThreadControl()
+        }
    }
 }
 

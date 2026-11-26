@@ -34,6 +34,22 @@ public enum SendMessageIntentContext {
     case share
 }
 
+private let newBotThreadIntentPrefix = "anva-new-bot-thread:"
+
+public func anvaBotShareUserId(_ string: String) -> Int64? {
+    guard let value = Int64(string), (1 ... 0x00ff_ffff_ffff_ffff).contains(value) else {
+        return nil
+    }
+    return value
+}
+
+public func anvaBotShareSuggestionPeerId(conversationIdentifier: String?) -> Int64? {
+    guard let conversationIdentifier, conversationIdentifier.hasPrefix(newBotThreadIntentPrefix) else {
+        return nil
+    }
+    return anvaBotShareUserId(String(conversationIdentifier.dropFirst(newBotThreadIntentPrefix.count)))
+}
+
 public enum SendMessageIntentSubject: CaseIterable {
     case contact
     case savedMessages
@@ -172,11 +188,18 @@ public func donateSendMessageIntent(account: Account, sharedContext: SharedAccou
             for (peer, _, avatarImage) in peers {
                 let recipientHandle = INPersonHandle(value: "tg\(peer.id.toInt64())", type: .unknown)
                 let displayTitle: String
+                var conversationIdentifier = "tg\(peer.id.toInt64())"
                 var nameComponents = PersonNameComponents()
                 
                 if let peer = peer as? TelegramUser {
-                    if peer.botInfo != nil || peer.flags.contains(.isSupport) {
+                    if peer.flags.contains(.isSupport) {
                         continue
+                    }
+                    if let botInfo = peer.botInfo {
+                        guard botInfo.flags.contains(.hasForum), botInfo.flags.contains(.forumManagedByUser) else {
+                            continue
+                        }
+                        conversationIdentifier = "\(newBotThreadIntentPrefix)\(peer.id.id._internalGetInt64Value())"
                     }
                     
                     if peer.id == account.peerId {
@@ -199,7 +222,7 @@ public func donateSendMessageIntent(account: Account, sharedContext: SharedAccou
                 
                 let recipient = INPerson(personHandle: recipientHandle, nameComponents: nameComponents, displayName: displayTitle, image: personImage, contactIdentifier: nil, customIdentifier: "tg\(peer.id.toInt64())")
                
-                let intent = INSendMessageIntent(recipients: [recipient], outgoingMessageType: .outgoingMessageText, content: nil, speakableGroupName: INSpeakableString(spokenPhrase: displayTitle), conversationIdentifier: "tg\(peer.id.toInt64())", serviceName: nil, sender: nil, attachments: nil)
+                let intent = INSendMessageIntent(recipients: [recipient], outgoingMessageType: .outgoingMessageText, content: nil, speakableGroupName: INSpeakableString(spokenPhrase: displayTitle), conversationIdentifier: conversationIdentifier, serviceName: nil, sender: nil, attachments: nil)
                 let interaction = INInteraction(intent: intent, response: nil)
                 interaction.direction = .outgoing
                 interaction.groupIdentifier = "sendMessage_\(peer.id.toInt64())"

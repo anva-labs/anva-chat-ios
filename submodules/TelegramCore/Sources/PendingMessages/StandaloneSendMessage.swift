@@ -264,38 +264,56 @@ public func standaloneSendEnqueueMessages(
                 |> then(.single(.done))
             }
 
-            var sendSignals: [Signal<Never, StandaloneSendMessagesError>] = []
-            
-            for (content, media, attributes) in allResults {
-                var text: String = ""
-                switch content.content {
-                case let .text(textValue):
-                    text = textValue
-                case let .media(_, textValue):
-                    text = textValue
+            func messageText(_ content: PendingMessageUploadedContent) -> String {
+                switch content {
+                case let .text(text), let .media(_, text):
+                    return text
                 default:
-                    break
+                    return ""
                 }
-                
-                sendSignals.append(sendUploadedMessageContent(
-                    postbox: postbox,
-                    network: network,
-                    stateManager: stateManager,
-                    accountPeerId: accountPeerId,
-                    peerId: peerId,
-                    content: content,
-                    text: text,
-                    attributes: attributes,
-                    media: media,
-                    threadId: threadId
-                ))
             }
-            
-            return combineLatest(sendSignals)
-            |> ignoreValues
-            |> map { _ -> StandaloneSendMessageStatus in
+            func send(to threadId: Int64?) -> Signal<StandaloneSendMessageStatus, StandaloneSendMessagesError> {
+                let sendSignals = allResults.map { content, media, attributes in
+                    return sendUploadedMessageContent(
+                        postbox: postbox,
+                        network: network,
+                        stateManager: stateManager,
+                        accountPeerId: accountPeerId,
+                        peerId: peerId,
+                        content: content,
+                        text: messageText(content.content),
+                        attributes: attributes,
+                        media: media,
+                        threadId: threadId
+                    )
+                }
+                return combineLatest(sendSignals)
+                |> ignoreValues
+                |> map { _ -> StandaloneSendMessageStatus in
+                }
+                |> then(.single(.done))
             }
-            |> then(.single(.done))
+
+            guard threadId == Message.newTopicThreadId else {
+                return send(to: threadId)
+            }
+            guard peerId.namespace == Namespaces.Peer.CloudUser, let first = allResults.first else {
+                return .fail(StandaloneSendMessagesError(peerId: peerId, reason: nil))
+            }
+            let text = messageText(first.result.content)
+            return _internal_createForumChannelTopic(
+                postbox: postbox,
+                network: network,
+                stateManager: stateManager,
+                accountPeerId: accountPeerId,
+                peerId: peerId,
+                title: text.isEmpty ? "New Thread" : String(text.prefix(16)),
+                iconColor: 0,
+                iconFileId: nil,
+                isTitleMissing: true
+            )
+            |> mapError { _ in StandaloneSendMessagesError(peerId: peerId, reason: nil) }
+            |> mapToSignal { send(to: $0) }
         } else {
             return .single(.progress(progressSum / max(1.0, Float(contentResults.count))))
         }

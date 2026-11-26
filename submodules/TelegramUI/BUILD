@@ -336,6 +336,7 @@ swift_library(
         "//submodules/TelegramUI/Components/Chat/ChatHistoryListViewBackend",
         "//submodules/TelegramUI/Components/News/NewsScreen",
         "//submodules/TelegramUI/Components/News/NewsFeedSupport",
+        "//submodules/TelegramUI/Components/AnvaThreadsScreen",
         "//submodules/TelegramUI/Components/Stories/StoryContainerScreen",
         "//submodules/TelegramUI/Components/CameraScreen",
         "//submodules/TelegramUI/Components/MediaEditorScreen",

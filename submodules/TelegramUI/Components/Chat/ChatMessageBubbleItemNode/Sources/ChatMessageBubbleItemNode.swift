@@ -20,6 +20,7 @@ import Emoji
 import PersistentStringHash
 import GridMessageSelectionNode
 import AppBundle
+import AnvaThreadsScreen
 import Markdown
 import TelegramStringFormatting
 import WallpaperBackgroundNode
@@ -123,6 +124,15 @@ private final class ChatMessageBubbleClippingNode: ASDisplayNode {
     }
 }
 
+private func chatBubbleMedia(_ message: Message, in chatLocation: ChatLocation) -> [Media] {
+    guard message.id.peerId == chatLocation.peerId,
+          let author = message.author as? TelegramUser, author.id == message.id.peerId, author.botInfo != nil,
+          !message.text.isEmpty || message.attributes.contains(where: { $0 is RichTextMessageAttribute }) else {
+        return message.media
+    }
+    return message.media.filter { !($0 is TelegramMediaWebpage) }
+}
+
 private func contentNodeMessagesAndClassesForItem(_ item: ChatMessageItem) -> ([(Message, AnyClass, ChatMessageEntryAttributes, BubbleItemAttributes)], Bool, Bool, Bool) {
     var result: [(Message, AnyClass, ChatMessageEntryAttributes, BubbleItemAttributes)] = []
     var skipText = false
@@ -157,7 +167,8 @@ private func contentNodeMessagesAndClassesForItem(_ item: ChatMessageItem) -> ([
             }
         }
         
-        var messageMedia = message.media
+        let visibleMedia = chatBubbleMedia(message, in: item.chatLocation)
+        var messageMedia = visibleMedia
         if let updatingMedia = itemAttributes.updatingMedia, messageMedia.isEmpty, case let .update(media) = updatingMedia.media {
             messageMedia.append(media.media)
         }
@@ -405,7 +416,7 @@ private func contentNodeMessagesAndClassesForItem(_ item: ChatMessageItem) -> ([
             messageWithFactCheckToAdd = (message, itemAttributes)
         }
         
-        inner: for media in message.media {
+        inner: for media in visibleMedia {
             if let webpage = media as? TelegramMediaWebpage {
                 if case let .Loaded(content) = webpage.content {
                     if let story = content.story {
@@ -1018,6 +1029,9 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 case .optionalAction:
                     return .none
                 case let .openContextMenu(openContextMenu):
+                    if strongSelf.textSelectionContentNode(at: location) != nil {
+                        return .customActivationProcess
+                    }
                     if openContextMenu.selectAll || strongSelf.contentContainers.count < 2 {
                         if openContextMenu.disableDefaultPressAnimation {
                             return .customActivationProcess
@@ -1058,6 +1072,23 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 case .action, .optionalAction:
                     break
                 case let .openContextMenu(openContextMenu):
+                    if let textNode = strongSelf.textSelectionContentNode(at: location), let message = textNode.item?.message {
+                        for other in strongSelf.contentNodes where other !== textNode {
+                            other.resignTextSelection()
+                        }
+                        let title = AnvaStrings.messageActionsTitle(strings: item.presentationData.strings)
+                        let point = strongSelf.view.convert(location, to: textNode.view)
+                        if textNode.selectText(at: point, messageAction: (title: title, perform: { [weak strongSelf] in
+                            guard let strongSelf, let item = strongSelf.item,
+                                  item.content.contains(where: { $0.0.id == message.id }) else {
+                                return
+                            }
+                            item.controllerInteraction.openMessageContextMenu(message, false, strongSelf, openContextMenu.subFrame, nil, location)
+                        })) {
+                            gesture.cancel()
+                            return
+                        }
+                    }
                     var tapMessage = openContextMenu.tapMessage
                     if openContextMenu.selectAll, case let .group(messages) = item.content, tapMessage.text.isEmpty {
                         for message in messages {
@@ -1067,7 +1098,8 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                             }
                         }
                     }
-                    item.controllerInteraction.openMessageContextMenu(tapMessage, openContextMenu.selectAll, strongSelf, openContextMenu.subFrame, gesture, nil)
+                    let hasText = strongSelf.contentNodes.contains { $0 is ChatMessageTextBubbleContentNode || $0 is ChatMessageRichDataBubbleContentNode }
+                    item.controllerInteraction.openMessageContextMenu(tapMessage, openContextMenu.selectAll, strongSelf, openContextMenu.subFrame, gesture, hasText ? location : nil)
                 }
             }
         }
@@ -2091,6 +2123,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         } else if item.message.id.peerId.isRepliesOrVerificationCodes {
             needsShareButton = false
         } else if incoming {
+            let messageMedia = chatBubbleMedia(item.message, in: item.chatLocation)
             if let _ = sourceReference {
                 needsShareButton = true
             }
@@ -2108,7 +2141,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             }
             
             if let info = item.message.forwardInfo {
-                if let author = info.author as? TelegramUser, let _ = author.botInfo, !item.message.media.isEmpty && !(item.message.media.first is TelegramMediaAction) {
+                if let author = info.author as? TelegramUser, let _ = author.botInfo, !messageMedia.isEmpty && !(messageMedia.first is TelegramMediaAction) {
                     needsShareButton = true
                 } else if let author = info.author as? TelegramChannel, case .broadcast = author.info {
                     needsShareButton = true
@@ -2116,7 +2149,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             }
             
             if !needsShareButton, let author = item.message.author as? TelegramUser, let _ = author.botInfo {
-                if !item.message.media.isEmpty && !(item.message.media.first is TelegramMediaAction) {
+                if !messageMedia.isEmpty && !(messageMedia.first is TelegramMediaAction) {
                     needsShareButton = true
                 } else if author.id == PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(92386307)) || author.id == PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(6435149744)) {
                     needsShareButton = true
@@ -2124,7 +2157,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             }
             var mayHaveSeparateCommentsButton = false
             if !needsShareButton {
-                loop: for media in item.message.media {
+                loop: for media in messageMedia {
                     if media is TelegramMediaGame || media is TelegramMediaInvoice {
                         needsShareButton = true
                         break loop
@@ -2134,7 +2167,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                     }
                 }
             } else {
-                loop: for media in item.message.media {
+                loop: for media in messageMedia {
                     if media is TelegramMediaAction {
                         needsShareButton = false
                         needsSummarizeButton = false
@@ -6641,6 +6674,16 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         }
     }
     
+    private func textSelectionContentNode(at point: CGPoint) -> ChatMessageBubbleContentNode? {
+        if let subject = self.item?.associatedData.subject, case .messageOptions = subject {
+            return nil
+        }
+        return self.contentNodes.first { node in
+            let localPoint = self.view.convert(point, to: node.view)
+            return node.bounds.contains(localPoint) && node.canSelectText(at: localPoint)
+        }
+    }
+
     private func gestureRecognized(gesture: TapLongTapOrDoubleTapGesture, location: CGPoint, recognizer: TapLongTapOrDoubleTapGestureRecognizer?) -> InternalBubbleTapAction? {
         var mediaMessage: Message?
         var forceOpen = false
@@ -6938,7 +6981,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                                 guard let self, let item = self.item else {
                                     return
                                 }
-                                item.controllerInteraction.openExternalInstantPage(ChatControllerInteraction.OpenInstantPage(webpageId: webpageId, url: url.url, anchor: anchor, concealed: true, progress: tapAction.activate?()))
+                                item.controllerInteraction.openExternalInstantPage(ChatControllerInteraction.OpenInstantPage(webpageId: webpageId, url: url.url, anchor: anchor, concealed: true, message: contentNode.item?.message, progress: tapAction.activate?()))
                             }, contextMenuOnLongPress: !tapAction.hasLongTapAction))
                         }
                     case let .phone(number):
@@ -7189,7 +7232,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                                     guard let self, let item = self.item else {
                                         return
                                     }
-                                    item.controllerInteraction.openExternalInstantPage(ChatControllerInteraction.OpenInstantPage(webpageId: webpageId, url: url.url, anchor: anchor, concealed: true, progress: tapAction.activate?()))
+                                    item.controllerInteraction.openExternalInstantPage(ChatControllerInteraction.OpenInstantPage(webpageId: webpageId, url: url.url, anchor: anchor, concealed: true, message: contentNode.item?.message, progress: tapAction.activate?()))
                                 }, contextMenuOnLongPress: !tapAction.hasLongTapAction))
                             }
                         case let .phone(number):

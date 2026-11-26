@@ -1586,7 +1586,7 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
     }
     
     override public func willUpdateIsExtractedToContextPreview(_ value: Bool) {
-        if !value {
+        if !value, self.textSelectionNode?.messageAction == nil {
             if let textSelectionNode = self.textSelectionNode {
                 self.textSelectionNode = nil
                 textSelectionNode.highlightAreaNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.2, removeOnCompletion: false)
@@ -1600,6 +1600,26 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
     
     override public func resignTextSelection() {
         self.cancelTextSelection()
+    }
+
+    override public func canSelectText(at point: CGPoint) -> Bool {
+        let textNode = self.textNode.textNode
+        let localPoint = self.view.convert(point, to: textNode.view)
+        return textNode.bounds.contains(localPoint) && textNode.attributesAtPoint(localPoint, orNearest: false) != nil
+    }
+
+    override public func selectText(at point: CGPoint, messageAction: (title: String, perform: () -> Void)) -> Bool {
+        self.updateIsExtractedToContextPreview(true)
+        guard let selection = self.textSelectionNode else {
+            return false
+        }
+        selection.messageAction = messageAction
+        selection.cancelSelectionOnOutsideTap = true
+        if selection.selectWord(at: self.view.convert(point, to: selection.view)) {
+            return true
+        }
+        selection.cancelSelection()
+        return false
     }
 
     override public func updateIsExtractedToContextPreview(_ value: Bool) {
@@ -1616,7 +1636,16 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                 }
                 
                 let textSelectionNode = TextSelectionNode(theme: TextSelectionTheme(selection: selectionColor, knob: knobColor, isDark: item.presentationData.theme.theme.overallDarkAppearance), strings: item.presentationData.strings, textNodeOrView: .node(self.textNode.textNode), updateIsActive: { [weak self] value in
-                    self?.updateIsTextSelectionActive?(value)
+                    guard let self else {
+                        return
+                    }
+                    if !value, let selection = self.textSelectionNode, selection.messageAction != nil {
+                        selection.messageAction = nil
+                        selection.isUserInteractionEnabled = false
+                        self.updateIsExtractedToContextPreview(false)
+                    } else if self.textSelectionNode?.messageAction == nil {
+                        self.updateIsTextSelectionActive?(value)
+                    }
                 }, present: { [weak self] c, a in
                     guard let self, let item = self.item else {
                         return
@@ -1689,7 +1718,7 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                 textSelectionNode.highlightAreaNode.frame = self.textNode.textNode.frame
             }
         } else {
-            if let textSelectionNode = self.textSelectionNode {
+            if let textSelectionNode = self.textSelectionNode, textSelectionNode.messageAction == nil {
                 self.textSelectionNode = nil
                 self.updateIsTextSelectionActive?(false)
                 textSelectionNode.highlightAreaNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.2, removeOnCompletion: false)
@@ -1699,7 +1728,7 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                 })
             }
             
-            if self.displayContentsUnderSpoilers.value {
+            if self.textSelectionNode?.messageAction == nil && self.displayContentsUnderSpoilers.value {
                 self.updateDisplayContentsUnderSpoilers(value: false, at: nil)
             }
         }

@@ -264,6 +264,7 @@ public final class TextSelectionNode: ASDisplayNode {
     public var canBeginSelection: (CGPoint) -> Bool = { _ in true }
     public var updateRange: ((NSRange?) -> Void)?
     public var presentMenu: ((UIView, CGPoint, [ContextMenuAction]) -> Void)?
+    public var messageAction: (title: String, perform: () -> Void)?
     /// Set by an editable host: the menu then offers Delete, which ends the selection and passes its range here.
     public var performDelete: ((NSRange) -> Void)?
     private let present: (ViewController, Any?) -> Void
@@ -382,43 +383,7 @@ public final class TextSelectionNode: ASDisplayNode {
             strongSelf.displayMenu()
         }
         recognizer.beginSelection = { [weak self] point in
-            guard let strongSelf = self, let attributedString = strongSelf.textNodeOrView.currentText else {
-                return
-            }
-            
-            strongSelf.dismissSelection()
-            
-            let mappedPoint = strongSelf.view.convert(point, to: strongSelf.textNodeOrView.view)
-            var resultRange: NSRange?
-            if let stringIndex = strongSelf.textNodeOrView.attributesAtPoint(mappedPoint, orNearest: false)?.0 {
-                let string = attributedString.string as NSString
-                
-                let inputRange = CFRangeMake(0, string.length)
-                let flag = UInt(kCFStringTokenizerUnitWord)
-                let locale = CFLocaleCopyCurrent()
-                let tokenizer = CFStringTokenizerCreate(kCFAllocatorDefault, string as CFString, inputRange, flag, locale)
-                var tokenType = CFStringTokenizerAdvanceToNextToken(tokenizer)
-                
-                while !tokenType.isEmpty {
-                    let currentTokenRange = CFStringTokenizerGetCurrentTokenRange(tokenizer)
-                    if currentTokenRange.location <= stringIndex && currentTokenRange.location + currentTokenRange.length > stringIndex {
-                        resultRange = NSRange(location: currentTokenRange.location, length: currentTokenRange.length)
-                        break
-                    }
-                    tokenType = CFStringTokenizerAdvanceToNextToken(tokenizer)
-                }
-                if resultRange == nil {
-                    resultRange = NSRange(location: stringIndex, length: 1)
-                }
-            }
-            
-            strongSelf.currentRange = resultRange.flatMap {
-                ($0.lowerBound, $0.upperBound)
-            }
-            strongSelf.updateSelection(range: resultRange, animateIn: true)
-            strongSelf.displayMenu()
-            strongSelf.recognizer?.isSelecting = true
-            strongSelf.updateIsActive(true)
+            self?.selectWord(at: point)
         }
         recognizer.clearSelection = { [weak self] in
             self?.dismissSelection()
@@ -434,6 +399,34 @@ public final class TextSelectionNode: ASDisplayNode {
         self.view.addGestureRecognizer(recognizer)
     }
     
+    @discardableResult
+    public func selectWord(at point: CGPoint) -> Bool {
+        let mappedPoint = self.view.convert(point, to: self.textNodeOrView.view)
+        guard let text = self.textNodeOrView.currentText,
+              let index = self.textNodeOrView.attributesAtPoint(mappedPoint, orNearest: false)?.0,
+              index >= 0, index < text.length else {
+            return false
+        }
+
+        let string = text.string as NSString
+        let tokenizer = CFStringTokenizerCreate(kCFAllocatorDefault, string as CFString, CFRangeMake(0, string.length), UInt(kCFStringTokenizerUnitWord), CFLocaleCopyCurrent())
+        var range = string.rangeOfComposedCharacterSequence(at: index)
+        if !CFStringTokenizerGoToTokenAtIndex(tokenizer, index).isEmpty {
+            let token = CFStringTokenizerGetCurrentTokenRange(tokenizer)
+            if token.location <= index && index < token.location + token.length {
+                range = NSRange(location: token.location, length: token.length)
+            }
+        }
+
+        self.dismissSelection()
+        self.currentRange = (range.lowerBound, range.upperBound)
+        self.updateSelection(range: range, animateIn: true)
+        self.recognizer?.isSelecting = true
+        self.updateIsActive(true)
+        self.displayMenu()
+        return true
+    }
+
     public func updateLayout() {
         if let currentRange = self.currentRange {
             let updatedMin = currentRange.0
@@ -786,6 +779,12 @@ public final class TextSelectionNode: ASDisplayNode {
                 self?.cancelSelection()
             }))
         }
+        if let messageAction = self.messageAction {
+            actions.append(ContextMenuAction(content: .text(title: messageAction.title, accessibilityLabel: messageAction.title), action: { [weak self] in
+                self?.cancelSelection()
+                messageAction.perform()
+            }))
+        }
         if self.enableLookup {
             actions.append(ContextMenuAction(content: .text(title: self.strings.Conversation_ContextMenuLookUp, accessibilityLabel: self.strings.Conversation_ContextMenuLookUp), action: { [weak self] in
                 self?.performAction(string, .lookup)
@@ -868,7 +867,7 @@ public final class TextSelectionNode: ASDisplayNode {
         if self.knobAtPoint(point) != nil {
             return self.view
         }
-        if self.bounds.contains(point) {
+        if self.messageAction == nil && self.bounds.contains(point) {
             return self.view
         }
         return nil

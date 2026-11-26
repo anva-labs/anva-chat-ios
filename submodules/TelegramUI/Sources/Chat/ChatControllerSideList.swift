@@ -14,6 +14,9 @@ import NavigationBarNode
 
 extension ChatControllerImpl {
     func currentSideListKind(presentationInterfaceState: ChatPresentationInterfaceState) -> ChatSideListKind? {
+        if self.hideTopicsPanel {
+            return nil
+        }
         return chatSideListKindForChatPresentationInterfaceState(presentationInterfaceState, context: self.context)
     }
 

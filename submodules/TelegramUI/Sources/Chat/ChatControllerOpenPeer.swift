@@ -22,6 +22,7 @@ import ContextUI
 import AlertUI
 import PresentationDataUtils
 import UndoUI
+import AnvaThreadsScreen
 import TelegramCallsUI
 import TelegramNotices
 import GameUI
@@ -421,46 +422,38 @@ extension ChatControllerImpl {
                     self.push(controller)
                 }
             })))
-        } else {
-            var canCreateTopics = false
-            if let peer = self.presentationInterfaceState.renderedPeer?.chatMainPeer as? TelegramUser, let botInfo = peer.botInfo, botInfo.flags.contains(.forumManagedByUser) {
-                canCreateTopics = true
-            }
-            if canCreateTopics {
-                items.append(.action(ContextMenuActionItem(text: strings.Chat_CreateTopic, icon: { theme in
-                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Edit"), color: theme.contextMenu.primaryColor)
-                }, action: { [weak self] action in
-                    guard let self else {
-                        return
-                    }
-                    
-                    action.dismissWithResult(.default)
-                    
-                    let controller = ForumCreateTopicScreen(context: self.context, peerId: peerId, mode: .create)
-                    controller.navigationPresentation = .modal
-                    
-                    controller.completion = { [weak self, weak controller] title, fileId, iconColor, _ in
-                        controller?.isInProgress = true
-                        controller?.view.endEditing(true)
-                        
-                        guard let self else {
-                            return
-                        }
-                        
-                        let _ = (self.context.engine.peers.createForumChannelTopic(id: peerId, title: title, iconColor: iconColor, iconFileId: fileId)
-                                 |> deliverOnMainQueue).startStandalone(next: { [weak self, weak controller] topicId in
-                            guard let self else {
-                                return
-                            }
-                            self.updateChatLocationThread(threadId: topicId)
-                            controller?.dismiss()
-                        }, error: { _ in
-                            controller?.isInProgress = false
-                        })
-                    }
-                    self.push(controller)
-                })))
-            }
+        } else if self.chatLocation.threadId != EngineMessage.newTopicThreadId,
+                  let peer = self.presentationInterfaceState.renderedPeer?.chatMainPeer as? TelegramUser,
+                  let botInfo = peer.botInfo,
+                  botInfo.flags.contains(.hasForum), botInfo.flags.contains(.forumManagedByUser) {
+            items.append(.action(ContextMenuActionItem(text: AnvaStrings.newThreadMenuTitle(strings: strings), icon: { theme in
+                return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Edit"), color: theme.contextMenu.primaryColor)
+            }, action: { [weak self] action in
+                action.dismissWithResult(.default)
+
+                guard let self, let navigationController = self.effectiveNavigationController else {
+                    return
+                }
+
+                let controller = ChatControllerImpl(context: self.context, chatLocation: .replyThread(message: ChatReplyThreadMessage(
+                    peerId: peerId,
+                    threadId: EngineMessage.newTopicThreadId,
+                    channelMessageId: nil,
+                    isChannelPost: false,
+                    isForumPost: true,
+                    isMonoforumPost: false,
+                    maxMessage: nil,
+                    maxReadIncomingMessageId: nil,
+                    maxReadOutgoingMessageId: nil,
+                    unreadCount: 0,
+                    initialFilledHoles: IndexSet(),
+                    initialAnchor: .automatic,
+                    isNotAvailable: false
+                )))
+                controller.hideTopicsPanel = self.hideTopicsPanel
+                navigationController.pushViewController(controller)
+                controller.activateInput(type: .text)
+            })))
         }
 
         let presentationData = self.presentationData

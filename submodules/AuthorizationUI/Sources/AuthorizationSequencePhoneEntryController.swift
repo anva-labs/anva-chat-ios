@@ -94,6 +94,11 @@ public final class AuthorizationSequencePhoneEntryController: ViewController, MF
             self.navigationItem.leftBarButtonItem = UIBarButtonItem(title: "___close", style: .plain, target: self, action: #selector(self.cancelPressed))
         }
         
+        if self.account != nil {
+            let qrTitle = presentationData.strings.baseLanguageCode.lowercased().hasPrefix("zh") ? "扫码登录" : "QR Login"
+            self.navigationItem.rightBarButtonItem = UIBarButtonItem(title: qrTitle, style: .plain, target: self, action: #selector(self.qrLoginPressed))
+        }
+        
         if let countriesConfiguration {
             AuthorizationSequenceCountrySelectionController.setupCountryCodes(countries: countriesConfiguration.countries, codesByPrefix: countriesConfiguration.countriesByPrefix)
         }
@@ -111,16 +116,26 @@ public final class AuthorizationSequencePhoneEntryController: ViewController, MF
         self.back()
     }
     
+    @objc private func qrLoginPressed() {
+        self.view.endEditing(true)
+        self.controllerNode.toggleQrLogin()
+    }
+    
     func updateNavigationItems() {
-        guard let layout = self.validLayout, layout.size.width < 360.0 else {
+        guard let layout = self.validLayout else {
             return
         }
-                
-        if self.inProgress {
-            let item = UIBarButtonItem(customDisplayNode: ProgressNavigationButtonNode(color: self.presentationData.theme.rootController.navigationBar.accentTextColor))
-            self.navigationItem.rightBarButtonItem = item
-        } else {
-            self.navigationItem.rightBarButtonItem = UIBarButtonItem(title: self.presentationData.strings.Common_Next, style: .done, target: self, action: #selector(self.nextPressed))
+        
+        if layout.size.width < 360.0 {
+            if self.inProgress {
+                let item = UIBarButtonItem(customDisplayNode: ProgressNavigationButtonNode(color: self.presentationData.theme.rootController.navigationBar.accentTextColor))
+                self.navigationItem.rightBarButtonItem = item
+            } else {
+                self.navigationItem.rightBarButtonItem = UIBarButtonItem(title: self.presentationData.strings.Common_Next, style: .done, target: self, action: #selector(self.nextPressed))
+            }
+        } else if self.account != nil {
+            let qrTitle = self.presentationData.strings.baseLanguageCode.lowercased().hasPrefix("zh") ? "扫码登录" : "QR Login"
+            self.navigationItem.rightBarButtonItem = UIBarButtonItem(title: qrTitle, style: .plain, target: self, action: #selector(self.qrLoginPressed))
         }
     }
     

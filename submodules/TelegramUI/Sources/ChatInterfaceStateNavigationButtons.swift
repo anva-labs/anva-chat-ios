@@ -139,7 +139,9 @@ func rightNavigationButtonForChatInterfaceState(context: AccountContext, present
         }
     }
     
-    if let user = presentationInterfaceState.renderedPeer?.peer as? TelegramUser, user.isForum, case .peer = presentationInterfaceState.chatLocation {
+    if let user = presentationInterfaceState.renderedPeer?.peer as? TelegramUser,
+       user.isForum, case .peer = presentationInterfaceState.chatLocation,
+       user.botInfo?.flags.contains(.forumManagedByUser) != true {
         let displaySearch = hasMessages
         
         if displaySearch {
@@ -290,6 +292,12 @@ func secondaryRightNavigationButtonForChatInterfaceState(context: AccountContext
         return nil
     }
     if let sideListKind {
+        if case .botThreads = sideListKind,
+           presentationInterfaceState.chatLocation.threadId != EngineMessage.newTopicThreadId,
+           let user = presentationInterfaceState.renderedPeer?.peer as? TelegramUser,
+           user.botInfo?.flags.contains(.forumManagedByUser) == true {
+            return moreInfoNavigationButton
+        }
         // Saved Messages keeps its search beside the sidebar button.
         if case .savedMessages = sideListKind {
             let isTags = presentationInterfaceState.hasSearchTags

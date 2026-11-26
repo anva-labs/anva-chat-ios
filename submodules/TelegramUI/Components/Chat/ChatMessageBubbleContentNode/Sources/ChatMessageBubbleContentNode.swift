@@ -348,6 +348,14 @@ open class ChatMessageBubbleContentNode: ASDisplayNode {
     open func resignTextSelection() {
     }
 
+    open func canSelectText(at point: CGPoint) -> Bool {
+        return false
+    }
+
+    open func selectText(at point: CGPoint, messageAction: (title: String, perform: () -> Void)) -> Bool {
+        return false
+    }
+
     open func updateAbsoluteRect(_ rect: CGRect, within containerSize: CGSize) {
     }
 

@@ -434,7 +434,7 @@ final class ShareScreenContentComponent: Component {
             if model.isSearching {
                 self.updateFolderPages(transition: transition)
             } else {
-                self.gridItems.update(component: component, environment: environment, availableWidth: self.bounds.width, visibleBounds: visible, peers: model.gridPeers, filterId: 0, isLoading: model.isLoading, transition: transition)
+                self.gridItems.update(component: component, environment: environment, availableWidth: self.bounds.width, visibleBounds: visible, filterId: 0, isLoading: model.isLoading, transition: transition)
                 self.gridItems.frame.origin = .zero
                 self.contentHeight = itemsTop + self.gridItems.contentHeight
             }

@@ -323,6 +323,13 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
     private let proceedNode: SolidRoundedButtonNode
     
     private var qrNode: ASImageNode?
+    private var qrOverlayView: UIView?
+    private var qrCardView: UIView?
+    private var qrTitleLabel: UILabel?
+    private var qrSubtitleLabel: UILabel?
+    private var qrCloseButton: UIButton?
+    private var qrImageContainerView: UIView?
+    private var qrActivityIndicator: UIActivityIndicatorView?
     private let exportTokenDisposable = MetaDisposable()
     private let tokenEventsDisposable = MetaDisposable()
     var accountUpdated: ((UnauthorizedAccount) -> Void)?
@@ -482,13 +489,6 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
             }
         }
         
-        if let account = account {
-            self.tokenEventsDisposable.set((account.updateLoginTokenEvents
-            |> deliverOnMainQueue).startStrict(next: { [weak self] _ in
-                self?.refreshQrToken()
-            }))
-        }
-        
         self.proceedNode.pressed = { [weak self] in
             self?.checkPhone?()
         }
@@ -508,9 +508,6 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
         super.didLoad()
         
         self.titleNode.view.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(self.debugTap(_:))))
-        #if DEBUG && false
-        self.noticeNode.view.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(self.debugQrTap(_:))))
-        #endif
     }
     
     private var animationSnapshotView: UIView?
@@ -692,6 +689,8 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
             self?.retryPasskey?()
         })
         self.noticeActivateAreaNode.frame = self.noticeNode.frame
+        
+        self.updateQrOverlayLayout(size: layout.size)
     }
     
     func activateInput() {
@@ -725,15 +724,186 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
         }
     }
     
-    @objc private func debugQrTap(_ recognizer: UITapGestureRecognizer) {
-        if self.qrNode == nil {
-            let qrNode = ASImageNode()
-            qrNode.frame = CGRect(origin: CGPoint(x: 16.0, y: 64.0 + 16.0), size: CGSize(width: 200.0, height: 200.0))
-            self.qrNode = qrNode
-            self.addSubnode(qrNode)
-            
-            self.refreshQrToken()
+    func toggleQrLogin() {
+        if self.qrOverlayView != nil {
+            self.hideQrLogin()
+        } else {
+            self.showQrLogin()
         }
+    }
+    
+    private func showQrLogin() {
+        guard self.qrOverlayView == nil, let account = self.account else {
+            return
+        }
+        
+        let isChinese = self.strings.baseLanguageCode.lowercased().hasPrefix("zh")
+        
+        let overlayView = UIView(frame: self.bounds)
+        overlayView.backgroundColor = UIColor.black.withAlphaComponent(0.55)
+        overlayView.alpha = 0.0
+        
+        let backdropButton = UIButton(type: .custom)
+        backdropButton.frame = overlayView.bounds
+        backdropButton.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        backdropButton.addTarget(self, action: #selector(self.closeQrPressed), for: .touchUpInside)
+        overlayView.addSubview(backdropButton)
+        
+        let cardView = UIView()
+        cardView.backgroundColor = self.theme.list.blocksBackgroundColor
+        cardView.layer.cornerRadius = 20.0
+        cardView.layer.masksToBounds = true
+        overlayView.addSubview(cardView)
+        
+        let titleLabel = UILabel()
+        titleLabel.font = Font.semibold(20.0)
+        titleLabel.textColor = self.theme.list.itemPrimaryTextColor
+        titleLabel.textAlignment = .center
+        titleLabel.text = isChinese ? "扫码登录 Anva Chat" : "Log in by QR Code"
+        cardView.addSubview(titleLabel)
+        
+        let qrContainerView = UIView()
+        qrContainerView.backgroundColor = .white
+        qrContainerView.layer.cornerRadius = 16.0
+        qrContainerView.layer.masksToBounds = true
+        cardView.addSubview(qrContainerView)
+        
+        let activityIndicator = UIActivityIndicatorView(style: .medium)
+        activityIndicator.color = .gray
+        activityIndicator.startAnimating()
+        qrContainerView.addSubview(activityIndicator)
+        
+        let qrNode = ASImageNode()
+        qrNode.displaysAsynchronously = false
+        qrContainerView.addSubview(qrNode.view)
+        
+        let subtitleLabel = UILabel()
+        subtitleLabel.font = Font.regular(14.0)
+        subtitleLabel.textColor = self.theme.list.itemSecondaryTextColor
+        subtitleLabel.textAlignment = .center
+        subtitleLabel.numberOfLines = 0
+        subtitleLabel.text = isChinese
+            ? "1. 打开手机上已登录的 Telegram\n2. 前往「设置」→「设备」→「关联桌面设备」\n3. 将摄像头对准此二维码即可直接登录"
+            : "1. Open Telegram on your logged-in device\n2. Go to Settings → Devices → Link Desktop Device\n3. Point your camera at this QR code to log in"
+        cardView.addSubview(subtitleLabel)
+        
+        let closeButton = UIButton(type: .system)
+        closeButton.titleLabel?.font = Font.semibold(16.0)
+        closeButton.setTitle(isChinese ? "关闭" : "Close", for: .normal)
+        closeButton.setTitleColor(self.theme.list.itemAccentColor, for: .normal)
+        closeButton.addTarget(self, action: #selector(self.closeQrPressed), for: .touchUpInside)
+        cardView.addSubview(closeButton)
+        
+        self.qrOverlayView = overlayView
+        self.qrCardView = cardView
+        self.qrTitleLabel = titleLabel
+        self.qrSubtitleLabel = subtitleLabel
+        self.qrCloseButton = closeButton
+        self.qrImageContainerView = qrContainerView
+        self.qrActivityIndicator = activityIndicator
+        self.qrNode = qrNode
+        
+        self.view.addSubview(overlayView)
+        self.updateQrOverlayLayout(size: self.bounds.size)
+        
+        UIView.animate(withDuration: 0.2) {
+            overlayView.alpha = 1.0
+        }
+        
+        self.tokenEventsDisposable.set((account.updateLoginTokenEvents
+        |> deliverOnMainQueue).startStrict(next: { [weak self] _ in
+            self?.refreshQrToken()
+        }))
+        self.refreshQrToken()
+    }
+    
+    func hideQrLogin() {
+        self.exportTokenDisposable.set(nil)
+        self.tokenEventsDisposable.set(nil)
+        
+        guard let overlayView = self.qrOverlayView else {
+            return
+        }
+        self.qrOverlayView = nil
+        self.qrCardView = nil
+        self.qrTitleLabel = nil
+        self.qrSubtitleLabel = nil
+        self.qrCloseButton = nil
+        self.qrImageContainerView = nil
+        self.qrActivityIndicator = nil
+        self.qrNode = nil
+        
+        UIView.animate(withDuration: 0.18, animations: {
+            overlayView.alpha = 0.0
+        }, completion: { _ in
+            overlayView.removeFromSuperview()
+        })
+    }
+    
+    @objc private func closeQrPressed() {
+        self.hideQrLogin()
+    }
+    
+    private func updateQrOverlayLayout(size: CGSize) {
+        guard let overlayView = self.qrOverlayView,
+              let cardView = self.qrCardView,
+              let titleLabel = self.qrTitleLabel,
+              let subtitleLabel = self.qrSubtitleLabel,
+              let closeButton = self.qrCloseButton,
+              let qrContainerView = self.qrImageContainerView,
+              let activityIndicator = self.qrActivityIndicator,
+              let qrNode = self.qrNode,
+              size.width > 0.0 else {
+            return
+        }
+        
+        overlayView.frame = CGRect(origin: .zero, size: size)
+        
+        let cardWidth = min(320.0, size.width - 40.0)
+        let horizontalPadding: CGFloat = 20.0
+        let contentWidth = cardWidth - horizontalPadding * 2.0
+        
+        let titleSize = titleLabel.sizeThatFits(CGSize(width: contentWidth, height: .greatestFiniteMagnitude))
+        titleLabel.frame = CGRect(x: horizontalPadding, y: 22.0, width: contentWidth, height: ceil(titleSize.height))
+        
+        let qrBoxSize: CGFloat = 220.0
+        let qrPadding: CGFloat = 14.0
+        qrContainerView.frame = CGRect(
+            x: floor((cardWidth - qrBoxSize) / 2.0),
+            y: titleLabel.frame.maxY + 16.0,
+            width: qrBoxSize,
+            height: qrBoxSize
+        )
+        activityIndicator.center = CGPoint(x: qrBoxSize / 2.0, y: qrBoxSize / 2.0)
+        qrNode.frame = CGRect(
+            x: qrPadding,
+            y: qrPadding,
+            width: qrBoxSize - qrPadding * 2.0,
+            height: qrBoxSize - qrPadding * 2.0
+        )
+        
+        let subtitleSize = subtitleLabel.sizeThatFits(CGSize(width: contentWidth, height: .greatestFiniteMagnitude))
+        subtitleLabel.frame = CGRect(
+            x: horizontalPadding,
+            y: qrContainerView.frame.maxY + 16.0,
+            width: contentWidth,
+            height: ceil(subtitleSize.height)
+        )
+        
+        closeButton.frame = CGRect(
+            x: horizontalPadding,
+            y: subtitleLabel.frame.maxY + 12.0,
+            width: contentWidth,
+            height: 44.0
+        )
+        
+        let cardHeight = closeButton.frame.maxY + 14.0
+        cardView.frame = CGRect(
+            x: floor((size.width - cardWidth) / 2.0),
+            y: floor((size.height - cardHeight) / 2.0),
+            width: cardWidth,
+            height: cardHeight
+        )
     }
     
     private func refreshQrToken() {
@@ -763,18 +933,19 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
             switch result {
             case let .displayToken(token):
                 var tokenString = token.value.base64EncodedString()
-                //print("export token \(tokenString)")
                 tokenString = tokenString.replacingOccurrences(of: "+", with: "-")
                 tokenString = tokenString.replacingOccurrences(of: "/", with: "_")
                 let urlString = "tg://login?token=\(tokenString)"
+                let qrImageSide: CGFloat = 192.0
                 let _ = (qrCode(string: urlString, color: .black, backgroundColor: .white, icon: .none)
                 |> deliverOnMainQueue).startStandalone(next: { _, generate in
                     guard let strongSelf = self else {
                         return
                     }
                     
-                    let context = generate(TransformImageArguments(corners: ImageCorners(), imageSize: CGSize(width: 200.0, height: 200.0), boundingSize: CGSize(width: 200.0, height: 200.0), intrinsicInsets: UIEdgeInsets()))
+                    let context = generate(TransformImageArguments(corners: ImageCorners(), imageSize: CGSize(width: qrImageSide, height: qrImageSide), boundingSize: CGSize(width: qrImageSide, height: qrImageSide), intrinsicInsets: UIEdgeInsets()))
                     if let image = context?.generateImage() {
+                        strongSelf.qrActivityIndicator?.stopAnimating()
                         strongSelf.qrNode?.image = image
                     }
                 })
@@ -793,12 +964,16 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
                 strongSelf.account = account
                 strongSelf.accountUpdated?(account)
                 strongSelf.tokenEventsDisposable.set((account.updateLoginTokenEvents
-                |> deliverOnMainQueue).startStrict(next: { _ in
+                |> deliverOnMainQueue).startStrict(next: { [weak self] _ in
                     self?.refreshQrToken()
                 }))
                 strongSelf.refreshQrToken()
-            case .loggedIn, .passwordRequested:
-                strongSelf.exportTokenDisposable.set(nil)
+            case let .passwordRequested(account):
+                strongSelf.account = account
+                strongSelf.accountUpdated?(account)
+                strongSelf.hideQrLogin()
+            case .loggedIn:
+                strongSelf.hideQrLogin()
             }
         }))
     }

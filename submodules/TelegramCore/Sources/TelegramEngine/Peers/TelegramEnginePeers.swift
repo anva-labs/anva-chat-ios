@@ -1906,6 +1906,25 @@ public extension TelegramEngine {
         public func getPossibleStarRefBotTargets() -> Signal<[EnginePeer], NoError> {
             return _internal_getPossibleStarRefBotTargets(account: self.account)
         }
+
+        /// Returns the bots the current account administers, or nil if the request fails.
+        public func managedBotIds() -> Signal<[EnginePeer.Id]?, NoError> {
+            let account = self.account
+            return account.network.request(Api.functions.bots.getAdminedBots())
+            |> map(Optional.some)
+            |> `catch` { _ -> Signal<[Api.User]?, NoError> in
+                return .single(nil)
+            }
+            |> mapToSignal { users -> Signal<[EnginePeer.Id]?, NoError> in
+                guard let users else {
+                    return .single(nil)
+                }
+                return account.postbox.transaction { transaction -> [EnginePeer.Id]? in
+                    updatePeers(transaction: transaction, accountPeerId: account.peerId, peers: AccumulatedPeers(users: users))
+                    return users.map(\.peerId)
+                }
+            }
+        }
     }
 }
 

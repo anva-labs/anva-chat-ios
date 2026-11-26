@@ -743,19 +743,6 @@ private func premiumSearchableItems(context: AccountContext) -> [SettingsSearcha
     
     items.append(
         SettingsSearchableItem(
-            id: "premium/app-icons",
-            title: strings.Premium_AppIcon,
-            alternate: synonyms(strings.SettingsSearch_Synonyms_Premium_AppIcon),
-            icon: icon,
-            breadcrumbs: [strings.Settings_Premium],
-            present: { context, _, present in
-                presentDemo(.appIcons, present)
-            }
-        )
-    )
-    
-    items.append(
-        SettingsSearchableItem(
             id: "business",
             title: strings.Settings_Business,
             alternate: [],

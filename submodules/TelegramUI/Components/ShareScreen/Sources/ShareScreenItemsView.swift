@@ -47,7 +47,7 @@ final class ShareScreenItemsView: UIView, UIScrollViewDelegate {
         self.recommendationsWillBeginDragging?()
     }
 
-    func update(component: ShareScreenContentComponent, environment: ViewControllerComponentContainer.Environment, availableWidth: CGFloat, visibleBounds: CGRect, peers: [EnginePeer], filterId: Int32, isLoading: Bool, transition: ComponentTransition) {
+    func update(component: ShareScreenContentComponent, environment: ViewControllerComponentContainer.Environment, availableWidth: CGFloat, visibleBounds: CGRect, peers: [EnginePeer] = [], filterId: Int32, isLoading: Bool, transition: ComponentTransition) {
         self.isUpdating = true
         defer { self.isUpdating = false }
         let model = component.model
@@ -86,6 +86,9 @@ final class ShareScreenItemsView: UIView, UIScrollViewDelegate {
             else if peer?.id == model.context.account.peerId { title = strings.DialogList_SavedMessages }
             else if communityChats.count == 1 { title = communityChats[0].compactDisplayTitle }
             else if communityChats.count > 1 { title = strings.FolderLinkPreview_TextAddChatsCount(Int32(clamping: communityChats.count)) }
+            else if let peer, model.selection.topics[peer.id] == EngineMessage.newTopicThreadId {
+                title = "\(model.displayPeer(peer).compactDisplayTitle)\n\(strings.Chat_NewThreadInfo_Title)"
+            }
             else { title = peer.map { model.displayPeer($0).compactDisplayTitle } ?? "" }
             var online = false
             if let peer, let presence = model.presences[peer.id], case let .present(until) = presence.status {
@@ -122,7 +125,9 @@ final class ShareScreenItemsView: UIView, UIScrollViewDelegate {
             if !showsRecents { self.sectionTitle.view?.isHidden = true }
             if showsRecents {
                 self.recommendations.frame = CGRect(x: 0.0, y: y, width: width, height: 106.0)
-                let recommended = (model.recommendations.isEmpty ? Array(peers.prefix(8)) : model.recommendations).filter { $0.id != model.context.account.peerId }
+                let recommended = model.recommendations.isEmpty
+                    ? peers.prefix(8).filter { $0.id != model.context.account.peerId }
+                    : model.recommendations
                 let recommendationBounds = self.recommendations.bounds.insetBy(dx: -84.0, dy: 0.0)
                 let recommendedRange = visible.intersects(self.recommendations.frame) ? shareScreenVisibleItems(min: recommendationBounds.minX, max: recommendationBounds.maxX, origin: 0.0, stride: 84.0, count: recommended.count) : 0 ..< 0
                 for index in recommendedRange {
@@ -180,17 +185,26 @@ final class ShareScreenItemsView: UIView, UIScrollViewDelegate {
         } else {
             self.recommendations.isHidden = true
             self.sectionTitle.view?.isHidden = true
-            var leadingPeers: [(EnginePeer?, Bool)] = []
+            let (bots, otherPeers) = model.gridPeers
+            var leadingItems: [(peer: EnginePeer?, story: Bool)] = []
             let showsLeadingItems = !model.defersItemsUntilFirstLoad || model.didCompleteFirstLoad
-            if showsLeadingItems && component.story != nil { leadingPeers.append((nil, true)) }
-            if showsLeadingItems, let peer = model.accountPeer { leadingPeers.append((peer, false)) }
-            let itemCount = leadingPeers.count + peers.count
+            if showsLeadingItems && component.story != nil { leadingItems.append((nil, true)) }
+            if showsLeadingItems, let peer = model.accountPeer { leadingItems.append((peer, false)) }
+            let otherPeersOffset = bots.count + leadingItems.count
+            let itemCount = otherPeersOffset + otherPeers.count
             let visibleRange = shareScreenVisibleItems(min: visible.minY, max: visible.maxY, origin: y, stride: 100.0, count: itemCount, columns: columns)
             for index in visibleRange {
-                let item: (EnginePeer?, Bool) = index < leadingPeers.count ? leadingPeers[index] : (peers[index - leadingPeers.count], false)
+                let item: (peer: EnginePeer?, story: Bool)
+                if index < bots.count {
+                    item = (bots[index], false)
+                } else if index < otherPeersOffset {
+                    item = leadingItems[index - bots.count]
+                } else {
+                    item = (otherPeers[index - otherPeersOffset], false)
+                }
                 let frame = CGRect(x: 10.0 + CGFloat(index % columns) * cellWidth, y: y + CGFloat(index / columns) * 100.0, width: cellWidth, height: 100.0)
                 if visible.intersects(frame) {
-                    gridItem(id: "grid-\(item.0.map { String(describing: $0.id) } ?? "story")", peer: item.0, story: item.1, frame: frame, parent: self)
+                    gridItem(id: "grid-\(item.peer.map { String(describing: $0.id) } ?? "story")", peer: item.peer, story: item.story, frame: frame, parent: self)
                 }
             }
             y += CGFloat((itemCount + columns - 1) / columns) * 100.0

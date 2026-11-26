@@ -1675,8 +1675,18 @@ extension ChatControllerImpl {
                             }
                             strongSelf.state.infoAvatar = .emojiStatus(content: avatarContent, contextActionIsEnabled: infoContextActionIsEnabled)
                         } else if chatLocation.threadId == EngineMessage.newTopicThreadId {
-                            strongSelf.state.chatTitleContent = .custom(title: [ChatTitleContent.TitleTextItem(id: AnyHashable(0), content: .text(strongSelf.presentationData.strings.Chat_MessageHeaderBotNewThread))], subtitle: nil, isEnabled: false)
-                            strongSelf.state.infoAvatar = nil
+                            if let peer = peerView.peers[peerView.peerId] {
+                                strongSelf.state.chatTitleContent = .peer(peerView: ChatTitleContent.PeerData(peerView: peerView), customTitle: nil, customSubtitle: nil, onlineMemberCount: (nil, nil), isScheduledMessages: false, isMuted: peerIsMuted, customMessageCount: nil, hidePeerStatus: false, isEnabled: true)
+                                strongSelf.state.infoAvatar = .peer(
+                                    peer: EnginePeer(peer),
+                                    imageOverride: nil,
+                                    contextActionIsEnabled: false,
+                                    accessibilityLabel: strongSelf.presentationData.strings.Conversation_ContextMenuOpenProfile
+                                )
+                            } else {
+                                strongSelf.state.chatTitleContent = .custom(title: [ChatTitleContent.TitleTextItem(id: AnyHashable(0), content: .text(strongSelf.presentationData.strings.Chat_MessageHeaderBotNewThread))], subtitle: nil, isEnabled: false)
+                                strongSelf.state.infoAvatar = nil
+                            }
                         } else {
                             strongSelf.state.chatTitleContent = .replyThread(type: replyThreadType, count: count)
                         }

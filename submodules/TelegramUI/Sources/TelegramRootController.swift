@@ -34,6 +34,7 @@ import PeerInfoStoryGridScreen
 import ShareWithPeersScreen
 import ChatEmptyNode
 import NewsScreen
+import AnvaThreadsScreen
 
 private class DetailsChatPlaceholderNode: ASDisplayNode, NavigationDetailsPlaceholderNode {
     private var presentationData: PresentationData
@@ -81,6 +82,7 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
     
     /// The Contacts screen `openContacts()` pushed; `getContactsController()` returns it while it is open.
     private weak var contactsController: ContactsController?
+    public var anvaThreadsController: AnvaThreadsScreen?
     public var callListController: CallListController?
     public var chatListController: ChatListController?
     public var accountSettingsController: PeerInfoScreen?
@@ -203,6 +205,12 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
     public func addRootControllers(showCallsTab: Bool, showNewsTab: Bool) {
         let tabBarController = TabBarControllerImpl(theme: self.presentationData.theme, strings: self.presentationData.strings)
         tabBarController.navigationPresentation = .master
+        let anvaThreadsController = AnvaThreadsScreen(context: self.context)
+        anvaThreadsController.configureOpenedChatController = { chatController in
+            if let chatController = chatController as? ChatControllerImpl {
+                chatController.hideTopicsPanel = true
+            }
+        }
         let chatListController = self.context.sharedContext.makeChatListController(context: self.context, location: .chatList(groupId: .root), controlsHistoryPreload: true, hideNetworkActivityStatus: false, previewing: false, enableDebugActions: !GlobalExperimentalSettings.isAppStoreBuild)
         if let sharedContext = self.context.sharedContext as? SharedAccountContextImpl {
             chatListController.tabBarItem.badgeValue = sharedContext.switchingData.chatListBadge
@@ -212,15 +220,14 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
         // Created even when hidden, like the calls tab: `updateRootControllers` shows and hides it.
         let newsController = NewsScreen(context: self.context)
         
-        var controllers: [ViewController] = []
+        var controllers: [ViewController] = [anvaThreadsController, chatListController]
         
-        if showCallsTab {
-            controllers.append(callListController)
-        }
         if showNewsTab {
             controllers.append(newsController)
         }
-        controllers.append(chatListController)
+        if showCallsTab {
+            controllers.append(callListController)
+        }
         
         var restoreSettignsController: (ViewController & SettingsController)?
         if let sharedContext = self.context.sharedContext as? SharedAccountContextImpl {
@@ -241,9 +248,10 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
         accountSettingsController.parentController = self
         controllers.append(accountSettingsController)
                 
-        let chatsIndex = controllers.firstIndex(where: { $0 === chatListController }) ?? 0
-        tabBarController.setControllers(controllers, selectedIndex: restoreSettignsController != nil ? (controllers.count - 1) : chatsIndex)
+        let initialIndex = controllers.firstIndex(where: { $0 === anvaThreadsController }) ?? 0
+        tabBarController.setControllers(controllers, selectedIndex: restoreSettignsController != nil ? (controllers.count - 1) : initialIndex)
         
+        self.anvaThreadsController = anvaThreadsController
         self.callListController = callListController
         self.newsController = newsController
         self.chatListController = chatListController
@@ -257,13 +265,16 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
             return
         }
         var controllers: [ViewController] = []
-        if showCallsTab {
-            controllers.append(self.callListController!)
+        if let anvaThreadsController = self.anvaThreadsController {
+            controllers.append(anvaThreadsController)
         }
+        controllers.append(self.chatListController!)
         if showNewsTab, let newsController = self.newsController {
             controllers.append(newsController)
         }
-        controllers.append(self.chatListController!)
+        if showCallsTab, let callListController = self.callListController {
+            controllers.append(callListController)
+        }
         controllers.append(self.accountSettingsController!)
 
         // A removed selected tab would otherwise fall back to index 0: select Chats instead.
@@ -294,6 +305,19 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
     
     public func openRootCompose() {
         self.chatListController?.activateCompose()
+    }
+
+    public func openAnvaBotNewThread(botPeerId: EnginePeer.Id? = nil, sharedLink: URL? = nil, sharedPhotos: [UIImage] = []) {
+        guard let rootTabController = self.rootTabController, let anvaThreadsController = self.anvaThreadsController else {
+            return
+        }
+        self.popToRoot(animated: false)
+        if let index = rootTabController.controllers.firstIndex(where: { $0 === anvaThreadsController }) {
+            rootTabController.selectedIndex = index
+        }
+        anvaThreadsController.openBotNewThread(botPeerId: botPeerId, sharedLink: sharedLink, presentPhotoPreview: sharedPhotos.isEmpty ? nil : { chat in
+            (chat as? ChatControllerImpl)?.displayPasteMenu(sharedPhotos.map { .image($0) }, includeInputText: false)
+        })
     }
     
     public func openRootCamera() {

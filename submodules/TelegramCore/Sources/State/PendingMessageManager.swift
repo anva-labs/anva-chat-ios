@@ -745,6 +745,14 @@ public final class PendingMessageManager {
                                                 subscriber(.didMove(fromThreadId: Message.newTopicThreadId, toThreadId: topicId))
                                             }
                                         }
+                                        if messagePeerId.namespace == Namespaces.Peer.CloudUser {
+                                            AnvaBotThreadActivityCenter.shared.publish(AnvaBotThreadActivityEvent(
+                                                accountPeerId: strongSelf.accountPeerId,
+                                                peerId: messagePeerId,
+                                                threadId: topicId,
+                                                timestamp: Int32(Date().timeIntervalSince1970)
+                                            ))
+                                        }
                                     })
                                 }
                             }, error: { _ in

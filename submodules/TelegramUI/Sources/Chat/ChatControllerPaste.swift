@@ -11,7 +11,7 @@ import LegacyMediaPickerUI
 import MediaEditor
 
 extension ChatControllerImpl {
-    func displayPasteMenu(_ subjects: [MediaPickerScreenImpl.Subject.Media]) {
+    func displayPasteMenu(_ subjects: [MediaPickerScreenImpl.Subject.Media], includeInputText: Bool = true) {
         let _ = (self.context.sharedContext.accountManager.transaction { transaction -> GeneratedMediaStoreSettings in
             let entry = transaction.getSharedData(ApplicationSpecificSharedDataKeys.generatedMediaStoreSettings)?.get(GeneratedMediaStoreSettings.self)
             return entry ?? GeneratedMediaStoreSettings.defaultSettings
@@ -22,7 +22,7 @@ extension ChatControllerImpl {
                 if strongSelf.presentationInterfaceState.interfaceState.postSuggestionState != nil {
                     enableMultiselection = false
                 }
-                let inputText = strongSelf.presentationInterfaceState.interfaceState.effectiveInputState.inputText
+                let inputText = includeInputText ? strongSelf.presentationInterfaceState.interfaceState.effectiveInputState.inputText : NSAttributedString()
                 
                 strongSelf.chatDisplayNode.dismissInput()
                 let controller = mediaPasteboardScreen(

@@ -251,6 +251,7 @@ final class ShareScreenSendCoordinator {
         var signals: [Signal<[EngineMessage.Id?], NoError>] = []
         for peer in peers {
             let threadId = topics[peer.id]
+            let replyToThreadId = threadId == EngineMessage.newTopicThreadId ? nil : threadId
             var attributes: [EngineMessage.Attribute] = []
             if let amount = stars[peer.id] {
                 attributes.append(PaidStarsMessageAttribute(stars: amount, postponeSending: false))
@@ -268,7 +269,7 @@ final class ShareScreenSendCoordinator {
                 text.enumerateAttribute(ChatTextInputAttributes.customEmoji, in: NSRange(location: 0, length: text.length), options: []) { value, _, _ in
                     if let emoji = value as? ChatTextInputTextCustomEmojiAttribute, let file = emoji.file { inlineStickers[file.fileId] = file }
                 }
-                return .message(text: text.string, attributes: attributes + [TextEntitiesMessageAttribute(entities: generateChatInputTextEntities(text))], inlineStickers: inlineStickers, mediaReference: mediaReference, threadId: threadId, replyToMessageId: threadId.map { EngineMessageReplySubject(messageId: EngineMessage.Id(peerId: peer.id, namespace: Namespaces.Message.Cloud, id: Int32(clamping: $0)), quote: nil, innerSubject: nil) }, replyToStoryId: nil, localGroupingKey: nil, correlationId: correlationId, bubbleUpEmojiOrStickersets: [])
+                return .message(text: text.string, attributes: attributes + [TextEntitiesMessageAttribute(entities: generateChatInputTextEntities(text))], inlineStickers: inlineStickers, mediaReference: mediaReference, threadId: threadId, replyToMessageId: replyToThreadId.map { EngineMessageReplySubject(messageId: EngineMessage.Id(peerId: peer.id, namespace: Namespaces.Message.Cloud, id: Int32(clamping: $0)), quote: nil, innerSubject: nil) }, replyToStoryId: nil, localGroupingKey: nil, correlationId: correlationId, bubbleUpEmojiOrStickersets: [])
             }
             var messages: [EnqueueMessage] = []
             switch self.subject {

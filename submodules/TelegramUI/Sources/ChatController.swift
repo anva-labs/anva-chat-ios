@@ -466,6 +466,16 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     var forcedNavigationBarTheme: PresentationTheme?
     var forcedWallpaper: TelegramWallpaper?
     var hideTopPanels: Bool = false
+    var hideTopicsPanel: Bool = false {
+        didSet {
+            if self.hideTopicsPanel != oldValue, self.isNodeLoaded {
+                self.updateRightNavigationButtons(presentationInterfaceState: self.presentationInterfaceState, transition: .immediate)
+                if let layout = self.validLayout {
+                    self.containerLayoutUpdated(layout, transition: .immediate)
+                }
+            }
+        }
+    }
     
     var automaticMediaDownloadSettings: MediaAutoDownloadSettings
     var automaticMediaDownloadSettingsDisposable: Disposable?
@@ -3487,7 +3497,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                         instantPage.progress?.set(.single(false))
                         
                         guard let webpageResult else {
-                            self.openUrl(instantPage.url, concealed: true)
+                            self.openUrl(instantPage.url, concealed: instantPage.concealed, message: instantPage.message)
                             return
                         }
                         
@@ -10298,11 +10308,21 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             }
         }
         
+        var confirmHiddenDestination = concealed
+        if concealed,
+           let message, message.id.peerId == self.chatLocation.peerId,
+           let author = message.author as? TelegramUser, author.id == message.id.peerId, author.botInfo != nil,
+           let webUrl = canonicalExternalUrl(from: url), let host = webUrl.host, !host.isEmpty,
+           let scheme = webUrl.scheme?.lowercased(), scheme == "http" || scheme == "https" {
+            // Relax the link-label check for direct bot replies. The URL handler still evaluates the address itself.
+            confirmHiddenDestination = false
+        }
+
         let _ = self.presentVoiceMessageDiscardAlert(action: { [weak self] in
             guard let self else {
                 return
             }
-            let disposable = OpenUserGeneratedUrl.openUserGeneratedUrl(context: self.context, peerId: self.contentData?.state.peerView?.peerId, url: url, webpage: nil, concealed: concealed, forceConcealed: forceConcealed, skipUrlAuth: skipUrlAuth, skipConcealedAlert: skipConcealedAlert, forceDark: false, present: { [weak self] c in
+            let disposable = OpenUserGeneratedUrl.openUserGeneratedUrl(context: self.context, peerId: self.contentData?.state.peerView?.peerId, url: url, webpage: nil, concealed: confirmHiddenDestination, forceConcealed: forceConcealed, skipUrlAuth: skipUrlAuth, skipConcealedAlert: skipConcealedAlert, forceDark: false, present: { [weak self] c in
                 self?.present(c, in: .window(.root))
             }, openResolved: { [weak self] resolved in
                 self?.openResolved(result: resolved, sourceMessageId: message?.id, progress: progress, forceExternal: forceExternal, concealed: concealed, commit: commit)

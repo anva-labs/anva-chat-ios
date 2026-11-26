@@ -767,7 +767,7 @@ public func enqueueMessages(account: Account, peerId: PeerId, messages: [Enqueue
     }
     return signal
     |> mapToSignal { messages -> Signal<[MessageId?], NoError> in
-        return account.postbox.transaction { transaction -> ([MessageId?], [MessageId]) in
+        return account.postbox.transaction { transaction -> ([MessageId?], [MessageId], [Int64?]) in
             var resultIds = Array<MessageId?>(repeating: nil, count: messages.count)
             var ephemeralMessageIds: [MessageId] = []
             var normalMessages: [(Bool, EnqueueMessage)] = []
@@ -786,18 +786,43 @@ public func enqueueMessages(account: Account, peerId: PeerId, messages: [Enqueue
                 }
             }
 
+            var trackedThreadIds: [Int64?] = []
             if !normalMessages.isEmpty {
                 let normalIds = enqueueMessages(transaction: transaction, account: account, peerId: peerId, messages: normalMessages)
                 for i in 0 ..< min(normalIds.count, normalMessageIndices.count) {
                     resultIds[normalMessageIndices[i]] = normalIds[i]
                 }
+
+                if let user = transaction.getPeer(peerId) as? TelegramUser, let botInfo = user.botInfo {
+                    var seenThreadIds = Set<Int64?>()
+                    for case let messageId? in normalIds {
+                        // Replies and forwards can acquire a topic when the message is enqueued.
+                        guard let message = transaction.getMessage(messageId),
+                              botInfo.shouldTrackAnvaHomeConversation(threadId: message.threadId),
+                              seenThreadIds.insert(message.threadId).inserted else {
+                            continue
+                        }
+                        trackedThreadIds.append(message.threadId)
+                    }
+                }
             }
 
-            return (resultIds, ephemeralMessageIds)
+            return (resultIds, ephemeralMessageIds, trackedThreadIds)
         }
-        |> map { resultIds, ephemeralMessageIds -> [MessageId?] in
+        |> map { resultIds, ephemeralMessageIds, trackedThreadIds -> [MessageId?] in
             for messageId in ephemeralMessageIds {
                 let _ = _internal_sendEphemeralOutgoingMessage(account: account, messageId: messageId).startStandalone()
+            }
+            if !trackedThreadIds.isEmpty {
+                let timestamp = Int32(Date().timeIntervalSince1970)
+                for threadId in trackedThreadIds {
+                    AnvaBotThreadActivityCenter.shared.publish(AnvaBotThreadActivityEvent(
+                        accountPeerId: account.peerId,
+                        peerId: peerId,
+                        threadId: threadId,
+                        timestamp: timestamp
+                    ))
+                }
             }
             return resultIds
         }

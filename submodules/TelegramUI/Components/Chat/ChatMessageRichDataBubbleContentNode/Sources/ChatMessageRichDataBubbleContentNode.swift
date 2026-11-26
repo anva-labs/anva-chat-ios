@@ -2358,9 +2358,38 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
     }
 
     override public func willUpdateIsExtractedToContextPreview(_ value: Bool) {
-        if !value {
+        if !value, self.textSelectionNode?.messageAction == nil {
             self.tearDownTextSelection(animated: true)
         }
+    }
+
+    override public func resignTextSelection() {
+        self.cancelTextSelection()
+    }
+
+    override public func canSelectText(at point: CGPoint) -> Bool {
+        guard let pageView = self.pageView else {
+            return false
+        }
+        let localPoint = self.view.convert(point, to: pageView)
+        return pageView.bounds.contains(localPoint) && pageView.selectableTextItems().contains { entry in
+            let itemPoint = CGPoint(x: localPoint.x - entry.parentOffset.x, y: localPoint.y - entry.parentOffset.y)
+            return entry.item.selectable && entry.item.attributesAtPoint(itemPoint, orNearest: false) != nil
+        }
+    }
+
+    override public func selectText(at point: CGPoint, messageAction: (title: String, perform: () -> Void)) -> Bool {
+        self.updateIsExtractedToContextPreview(true)
+        guard let selection = self.textSelectionNode else {
+            return false
+        }
+        selection.messageAction = messageAction
+        selection.cancelSelectionOnOutsideTap = true
+        if selection.selectWord(at: self.view.convert(point, to: selection.view)) {
+            return true
+        }
+        selection.cancelSelection()
+        return false
     }
 
     override public func updateIsExtractedToContextPreview(_ value: Bool) {
@@ -2373,7 +2402,9 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
         // selection overlay attached on every message sent from the composer. This mirrors
         // `ChatMessageTextBubbleContentNode`, which tears down in both hooks for the same reason.
         if !value {
-            self.tearDownTextSelection(animated: true)
+            if self.textSelectionNode?.messageAction == nil {
+                self.tearDownTextSelection(animated: true)
+            }
             return
         }
         guard self.textSelectionNode == nil, let messageItem = self.item, self.currentPageLayout?.layout != nil, let pageView = self.pageView, let rootNode = messageItem.controllerInteraction.chatControllerNode() else {
@@ -2396,7 +2427,13 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
             theme: TextSelectionTheme(selection: selectionColor, knob: knobColor, isDark: theme.overallDarkAppearance),
             strings: messageItem.presentationData.strings,
             textNodeOrView: .node(adapter),
-            updateIsActive: { _ in },
+            updateIsActive: { [weak self] active in
+                if !active, let self, let selection = self.textSelectionNode, selection.messageAction != nil {
+                    selection.messageAction = nil
+                    selection.isUserInteractionEnabled = false
+                    self.tearDownTextSelection(animated: true)
+                }
+            },
             present: { [weak self] c, a in
                 guard let self, let item = self.item else {
                     return

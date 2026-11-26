@@ -314,7 +314,7 @@ extension ChatControllerImpl {
                 
                 let source: ContextContentSource
                 if let location = location {
-                    source = .location(ChatMessageContextLocationContentSource(controller: self, location: node.view.convert(node.bounds, to: nil).origin.offsetBy(dx: location.x, dy: location.y)))
+                    source = .location(ChatMessageContextLocationContentSource(controller: self, location: node.view.convert(location, to: nil)))
                 } else {
                     source = .extracted(ChatMessageContextExtractedContentSource(chatController: self, chatNode: self.chatDisplayNode, engine: self.context.engine, message: message, selectAll: selectAll, keepDefaultContentTouches: keepDefaultContentTouches))
                 }

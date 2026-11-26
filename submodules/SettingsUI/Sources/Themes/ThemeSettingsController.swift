@@ -546,13 +546,9 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
     
     let _ = context.engine.themes.wallpapers().start()
     
-    let currentAppIcon: PresentationAppIcon?
     var appIcons = context.sharedContext.applicationBindings.getAvailableAlternateIcons()
-    if let alternateIconName = context.sharedContext.applicationBindings.getAlternateIconName() {
-        currentAppIcon = appIcons.filter { $0.name == alternateIconName }.first
-    } else {
-        currentAppIcon = appIcons.filter { $0.isDefault }.first
-    }
+    let alternateIconName = context.sharedContext.applicationBindings.getAlternateIconName()
+    let currentAppIcon = appIcons.first(where: { $0.name == alternateIconName }) ?? appIcons.first(where: \.isDefault)
     
     let premiumConfiguration = PremiumConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
     if premiumConfiguration.isPremiumDisabled || context.account.testingEnvironment {
@@ -561,7 +557,7 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
     
     let availableAppIcons: Signal<[PresentationAppIcon], NoError> = .single(appIcons)
     let currentAppIconName = ValuePromise<String?>()
-    currentAppIconName.set(currentAppIcon?.name ?? "Blue")
+    currentAppIconName.set(currentAppIcon?.name)
     
     let cloudThemes = Promise<[TelegramTheme]>()
     let updatedCloudThemes = context.engine.themes.themes(accountManager: context.sharedContext.accountManager)

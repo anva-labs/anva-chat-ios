@@ -445,6 +445,43 @@ static NSString * _Nonnull getPluralizationSuffix(uint32_t lc, int32_t value) {
     }
 }
 
+static NSString * _Nonnull brandAnvaAppString(NSString * _Nonnull key, NSString * _Nonnull value) {
+    static NSSet<NSString *> *appNames;
+    static NSSet<NSString *> *appCopy;
+    static NSArray<NSString *> *upstreamNames;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        appNames = [NSSet setWithArray:@[
+            @"Application.Name", @"Tour.Title1", @"Watch.AppName", @"Widget.GalleryTitle", @"WebBrowser.Telegram"
+        ]];
+        appCopy = [NSSet setWithArray:@[
+            @"Tour.Text2", @"Tour.Text3", @"Tour.Text4", @"Tour.Text5",
+            @"Contacts.AccessDeniedError", @"Contacts.AccessDeniedHelpLandscape",
+            @"Contacts.AccessDeniedHelpPortrait", @"Contacts.PermissionsText", @"Contacts.LimitedAccess.Text",
+            @"ShareFileTip.Text", @"Conversation.FileHowToText", @"PasscodeSettings.EncryptDataHelp",
+            @"EnterPasscode.EnterTitle", @"EnterPasscode.EnterPasscode", @"EnterPasscode.TouchId",
+            @"DialogList.PasscodeLockHelp", @"PasscodeSettings.LockTelegram", @"Passcode.AppLockedAlert",
+            @"AppUpgrade.Running", @"ChatImportActivity.OpenApp",
+            @"Watch.Location.Access", @"Watch.AuthRequired", @"Watch.Microphone.Access", @"Widget.AuthRequired",
+            @"Cache.Indexing", @"StorageManagement.DescriptionAppUsage", @"Permissions.CellularDataText.v0",
+            @"Attachment.CameraAccessText", @"Map.HomeAndWorkInfo", @"Notifications.PermissionsSuppressWarningText",
+            @"Call.StatusIncoming", @"Call.StatusOngoing", @"UserInfo.TelegramCall", @"UserInfo.TelegramVideoCall",
+            @"WebBrowser.OpenLinksInfo", @"WebBrowser.ClearCookies.Info"
+        ]];
+        upstreamNames = @[@"Telegram", @"Телеграм", @"تلگرام", @"تيليجرام", @"تيليغرام", @"텔레그램", @"テレグラム"];
+    });
+    if ([appNames containsObject:key]) {
+        return @"Anva Chat";
+    }
+    if ([appCopy containsObject:key] || [key hasPrefix:@"AccessDenied."] || [key hasPrefix:@"InfoPlist.NS"]) {
+        for (NSString *name in upstreamNames) {
+            value = [value stringByReplacingOccurrencesOfString:name withString:@"Anva Chat"
+                options:NSCaseInsensitiveSearch range:NSMakeRange(0, value.length)];
+        }
+    }
+    return value;
+}
+
 static NSString * _Nonnull getSingle(_PresentationStrings * _Nullable strings, NSString * _Nonnull key,
     bool * _Nullable isFound) {
     NSString *result = nil;
@@ -484,7 +521,7 @@ static NSString * _Nonnull getSingle(_PresentationStrings * _Nullable strings, N
             *isFound = true;
         }
     }
-    return result;
+    return brandAnvaAppString(key, result);
 }
 
 static NSString * _Nonnull getSingleIndirect(_PresentationStrings * _Nonnull strings, uint32_t keyId) {

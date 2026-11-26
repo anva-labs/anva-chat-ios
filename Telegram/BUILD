@@ -320,46 +320,9 @@ filegroup(
 )
 
 filegroup(
-    name = "DefaultIcon",
-    srcs = glob([
-        "Telegram-iOS/AppIcons.xcassets/BlueIcon.appiconset/*.png",
-    ]),
+    name = "AnvaAppIcon",
+    srcs = glob(["Telegram-iOS/AnvaAppIcon.xcassets/**/*"]),
 )
-
-alternate_icon_folders = [
-    "BlackIcon",
-    "BlackClassicIcon",
-    "BlackFilledIcon",
-    "BlueIcon",
-    "BlueClassicIcon",
-    "BlueFilledIcon",
-    "WhiteFilledIcon",
-    "New1",
-    "New2",
-    "Premium",
-    "PremiumBlack",
-    "PremiumTurbo",
-]
-
-composer_icon_folders = ["Telegram"]
-
-[
-    filegroup(
-        name = "{}".format(name),
-        srcs = glob([
-            "Telegram-iOS/{}.alticon/*.png".format(name),
-        ]),
-    ) for name in alternate_icon_folders
-]
-
-[
-    filegroup(
-        name = "{}_icon".format(name),
-        srcs = glob([
-            "Telegram-iOS/{}.icon/**/*".format(name),
-        ]),
-    ) for name in composer_icon_folders
-]
 
 filegroup(
     name = "LaunchScreen",
@@ -374,6 +337,15 @@ objc_library(
     srcs = [
         "Telegram-iOS/main.m"
     ],
+)
+
+swift_library(
+    name = "AnvaNewThreadIntentApp",
+    module_name = "AnvaNewThreadIntents",
+    srcs = ["//Telegram/ControlIntents:AnvaNewThreadIntent.swift"],
+    defines = ["ANVA_MAIN_APP"],
+    linkopts = ["-Wl,-weak_framework,AppIntents"],
+    deps = ["//submodules/TelegramUI:TelegramUI"],
 )
 
 swift_library(
@@ -441,6 +413,7 @@ plist_fragment(
             <key>CFBundleURLSchemes</key>
             <array>
                 <string>tg</string>
+                <string>anva</string>
                 <string>tonsite</string>
                 <string>ton</string>
                 <string>tc</string>
@@ -635,14 +608,16 @@ plist_fragment(
     """
 )
 
+app_display_name = "Anva Chat"
+
 plist_fragment(
     name = "AppNameInfoPlist",
     extension = "plist",
     template =
     """
     <key>CFBundleDisplayName</key>
-    <string>Telegram</string>
-    """
+    <string>{app_display_name}</string>
+    """.format(app_display_name=app_display_name)
 )
 
 plist_fragment(
@@ -922,33 +897,6 @@ genrule(
     ]
 )
 
-genrule(
-    name = "GenerateAddAlternateIcons",
-    srcs = [
-        "Telegram-iOS/AddAlternateIcons.sh",
-    ],
-    cmd_bash =
-"""
-    cat $(location Telegram-iOS/AddAlternateIcons.sh) >> $(location AddAlternateIcons.sh)
-""",
-    outs = [
-        "AddAlternateIcons.sh",
-    ],
-    executable = True,
-    visibility = [
-        "//visibility:public",
-    ]
-)
-
-sh_binary(
-    name = "AddAlternateIcons",
-    data = [
-        "Telegram-iOS/AlternateIcons.plist",
-        "Telegram-iOS/AlternateIcons-iPad.plist",
-    ],
-    srcs = [":GenerateAddAlternateIcons"],
-)
-
 plist_fragment(
     name = "TelegramUIInfoPlist",
     extension = "plist",
@@ -983,6 +931,7 @@ framework_exported_symbols(
     clients = [
         ":Main",
         ":Lib",
+        ":AnvaNewThreadIntentApp",
         ":ShareExtensionLib",
         ":NotificationContentExtensionLib",
         ":BroadcastUploadExtensionLib",
@@ -1040,7 +989,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.Share</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Anva Chat</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1092,6 +1041,7 @@ swift_library(
     deps = [
         "//submodules/TelegramUI",
         "//submodules/PasscodeCore",
+        "//submodules/TelegramIntents",
         "//submodules/TelegramUI/Components/ShareExtensionContext"
     ],
 )
@@ -1145,7 +1095,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.NotificationContent</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Anva Chat</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1253,7 +1203,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.Widget</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Anva Chat</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1289,6 +1239,7 @@ swift_library(
         ":WidgetAssets",
     ],
     deps = [
+        "//Telegram/ControlIntents:AnvaNewThreadIntentWidget",
         "//submodules/BuildConfig:BuildConfig",
         "//submodules/WidgetItems:WidgetItems_iOS14",
         "//submodules/WidgetItemsUtils:WidgetItemsUtils",
@@ -1322,6 +1273,7 @@ genrule(
 
 ios_extension(
     name = "WidgetExtension",
+    app_intents = ["//Telegram/ControlIntents:AnvaNewThreadIntentWidget"],
     bundle_id = "{telegram_bundle_id}.Widget".format(
         telegram_bundle_id = telegram_bundle_id,
     ),
@@ -1347,6 +1299,7 @@ ios_extension(
         ":disableProvisioningProfilesSetting": None,
         "//conditions:default": "@build_configuration//provisioning:Widget.mobileprovision",
     }),
+    strings = ["WidgetKitWidget/zh-Hans.lproj/Localizable.strings"],
     deps = [
         ":WidgetExtensionLib",
     ],
@@ -1370,7 +1323,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.SiriIntents</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Anva Chat</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1533,7 +1486,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.BroadcastUpload</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Anva Chat</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1627,7 +1580,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.NotificationService</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Anva Chat</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1696,11 +1649,11 @@ plist_fragment(
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>Telegram</string>
+    <string>{app_display_name}</string>
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Anva Chat</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleSignature</key>
@@ -1758,17 +1711,17 @@ plist_fragment(
     <key>NSCameraUsageDescription</key>
     <string>We need this so that you can take and share photos and videos.</string>
     <key>NSContactsUsageDescription</key>
-    <string>Telegram stores your contacts heavily encrypted in the cloud to let you connect with your friends across all your devices.</string>
+    <string>Anva Chat stores your contacts heavily encrypted in the cloud to let you connect with your friends across all your devices.</string>
     <key>NSFaceIDUsageDescription</key>
     <string>You can use Face ID to unlock the app.</string>
     <key>NSLocationAlwaysUsageDescription</key>
-    <string>When you send your location to your friends, Telegram needs access to show them a map. You also need this to send locations from an Apple Watch.</string>
+    <string>When you send your location to your friends, Anva Chat needs access to show them a map. You also need this to send locations from an Apple Watch.</string>
     <key>NSLocationWhenInUseUsageDescription</key>
-    <string>When you send your location to your friends, Telegram needs access to show them a map.</string>
+    <string>When you send your location to your friends, Anva Chat needs access to show them a map.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>We need this so that you can record and share voice messages and videos with sound.</string>
     <key>NSMotionUsageDescription</key>
-    <string>When you send your location to your friends, Telegram needs access to show them a map.</string>
+    <string>When you send your location to your friends, Anva Chat needs access to show them a map.</string>
     <key>NSPhotoLibraryAddUsageDescription</key>
     <string>We need this so that you can share photos and videos from your photo library.</string>
     <key>NSPhotoLibraryUsageDescription</key>
@@ -1853,10 +1806,10 @@ plist_fragment(
                 <string>public.data</string>
             </array>
             <key>UTTypeDescription</key>
-            <string>Telegram iOS Color Theme File</string>
+            <string>Anva Chat Color Theme File</string>
             <key>UTTypeIconFiles</key>
             <array>
-                <string>BlueIcon@3x.png</string>
+                <string>AnvaAppIconPreview.png</string>
             </array>
             <key>UTTypeIdentifier</key>
             <string>org.telegram.Telegram-iOS.theme</string>
@@ -1875,6 +1828,7 @@ plist_fragment(
     <true/>
     """.format(
         telegram_bundle_id = telegram_bundle_id,
+        app_display_name = app_display_name,
     )
 )
 
@@ -1905,6 +1859,7 @@ apple_prebuilt_watchos_application(
 
 ios_application(
     name = "Telegram",
+    app_intents = [":AnvaNewThreadIntentApp"],
     bundle_id = "{telegram_bundle_id}".format(
         telegram_bundle_id = telegram_bundle_id,
     ),
@@ -1922,12 +1877,10 @@ ios_application(
         ":RequiredDeviceCapabilitiesPlist",
         ":UrlTypesInfoPlist",
     ],
-    app_icons = [ ":{}_icon".format(name) for name in composer_icon_folders ],
-    alternate_icons = [
-        ":{}".format(name) for name in alternate_icon_folders
-    ],
+    app_icons = [":AnvaAppIcon"],
     resources = [
         ":LaunchScreen",
+        "Telegram-iOS/AnvaAppIconPreview.png",
         #":DefaultAppIcon",
     ],
     frameworks = [
@@ -1939,6 +1892,8 @@ ios_application(
     ],
     strings = [
         ":AppStringResources",
+        "Telegram-iOS/en.lproj/Anva.strings",
+        "Telegram-iOS/zh-Hans.lproj/Anva.strings",
     ],
     extensions = select({
         ":disableExtensionsSetting": [],
@@ -1961,6 +1916,7 @@ ios_application(
     deps = [
         ":Main",
         ":Lib",
+        ":AnvaNewThreadIntentApp",
     ],
     visibility = ["//visibility:public"],
 )

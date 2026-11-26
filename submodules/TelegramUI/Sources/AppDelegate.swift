@@ -236,6 +236,16 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     )
 }
 
+/// Routes the Control Center action through the app's normal deep-link startup path.
+@MainActor
+public func openAnvaNewThreadFromControl() {
+    guard let delegate = UIApplication.shared.delegate as? AppDelegate,
+          let url = URL(string: "anva://new_thread") else {
+        return
+    }
+    delegate.openUrlWhenReady(url: url)
+}
+
 @objc(AppDelegate) class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate, UNUserNotificationCenterDelegate, URLSessionDelegate, URLSessionTaskDelegate {
     @objc var window: UIWindow?
     var nativeWindow: (UIWindow & WindowHost)?
@@ -995,29 +1005,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }, dismissNativeController: {
             self.window?.rootViewController?.dismiss(animated: true, completion: nil)
         }, getAvailableAlternateIcons: {
-            if #available(iOS 10.3, *) {
-                var icons = [
-                    PresentationAppIcon(name: "BlueIcon", imageName: "BlueIcon", isDefault: buildConfig.isAppStoreBuild),
-                    PresentationAppIcon(name: "New2", imageName: "New2"),
-                    PresentationAppIcon(name: "New1", imageName: "New1"),
-                    PresentationAppIcon(name: "BlackIcon", imageName: "BlackIcon"),
-                    PresentationAppIcon(name: "BlueClassicIcon", imageName: "BlueClassicIcon"),
-                    PresentationAppIcon(name: "BlackClassicIcon", imageName: "BlackClassicIcon"),
-                    PresentationAppIcon(name: "BlueFilledIcon", imageName: "BlueFilledIcon"),
-                    PresentationAppIcon(name: "BlackFilledIcon", imageName: "BlackFilledIcon")
-                ]
-                if buildConfig.isInternalBuild {
-                    icons.append(PresentationAppIcon(name: "WhiteFilledIcon", imageName: "WhiteFilledIcon"))
-                }
-                
-                icons.append(PresentationAppIcon(name: "Premium", imageName: "Premium", isPremium: true))
-                icons.append(PresentationAppIcon(name: "PremiumTurbo", imageName: "PremiumTurbo", isPremium: true))
-                icons.append(PresentationAppIcon(name: "PremiumBlack", imageName: "PremiumBlack", isPremium: true))
-                
-                return icons
-            } else {
-                return []
-            }
+            return [PresentationAppIcon(name: "AnvaAppIcon", imageName: "AnvaAppIconPreview", isDefault: true)]
         }, getAlternateIconName: {
             if #available(iOS 10.3, *) {
                 return application.alternateIconName
@@ -1025,6 +1013,10 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 return nil
             }
         }, requestSetAlternateIconName: { name, completion in
+            guard application.alternateIconName != name else {
+                completion(true)
+                return
+            }
             application.setAlternateIconName(name, completionHandler: { error in
                 if let error = error {
                    Logger.shared.log("App \(self.episodeId)", "failed to set alternate icon with error \(error.localizedDescription)")
@@ -2969,7 +2961,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }))
     }
     
-    private func openChatWhenReady(accountId: AccountRecordId?, peerId: PeerId, threadId: Int64?, messageId: MessageId? = nil, activateInput: Bool = false, storyId: StoryId?, openAppIfAny: Bool = false, alwaysKeepMessageId: Bool = false) {
+    private func openChatWhenReady(accountId: AccountRecordId?, peerId: PeerId, threadId: Int64?, messageId: MessageId? = nil, notificationMessageId: MessageId? = nil, activateInput: Bool = false, storyId: StoryId?, openAppIfAny: Bool = false, alwaysKeepMessageId: Bool = false) {
         if let messageId, messageId.namespace == Namespaces.Message.Cloud,
            peerId == PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(777000)) {
             if self.walletTonConnectNotifications.enqueue(accountId: accountId, messageId: messageId, alwaysKeepMessageId: alwaysKeepMessageId) {
@@ -2995,9 +2987,10 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             }
         }
         self.openChatWhenReadyDisposable.set((signal
-        |> deliverOnMainQueue).start(next: { context in
-            context.openChatWithPeerId(peerId: peerId, threadId: threadId, messageId: messageId, activateInput: activateInput, storyId: storyId, openAppIfAny: openAppIfAny, alwaysKeepMessageId: alwaysKeepMessageId)
-        }))
+        |> deliverOnMainQueue
+        |> mapToSignal { context in
+            return context.openChatWithPeerId(peerId: peerId, threadId: threadId, messageId: messageId, notificationMessageId: notificationMessageId, activateInput: activateInput, storyId: storyId, openAppIfAny: openAppIfAny, alwaysKeepMessageId: alwaysKeepMessageId)
+        }).start())
     }
     
     private var walletTonConnectNotifications = WalletTonConnectNotificationQueue<AccountRecordId, MessageId>()
@@ -3026,8 +3019,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             if isWalletAvailable, let message, let request = walletTonConnectRequestRoute(message: message, accountPeerId: context.context.account.peerId) {
                 context.context.walletContext?.openTonConnectRequest(sessionId: request.sessionId, messageId: request.messageId)
             } else {
-                context.openChatWithPeerId(peerId: route.messageId.peerId, threadId: nil, messageId: route.messageId,
-                    activateInput: false, storyId: nil, openAppIfAny: false, alwaysKeepMessageId: route.alwaysKeepMessageId)
+                let _ = context.openChatWithPeerId(peerId: route.messageId.peerId, threadId: nil, messageId: route.messageId,
+                    activateInput: false, storyId: nil, openAppIfAny: false, alwaysKeepMessageId: route.alwaysKeepMessageId).startStandalone()
                 if !isWalletAvailable {
                     self.presentWalletUnavailable(in: context)
                 }
@@ -3038,7 +3031,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
 
     private var openUrlInProgress: URL?
-    private func openUrlWhenReady(accountId: AccountRecordId? = nil, url: URL, external: Bool = false) {
+    fileprivate func openUrlWhenReady(accountId: AccountRecordId? = nil, url: URL, external: Bool = false) {
         self.openUrlInProgress = url
         
         let signal = self.sharedContextPromise.get()
@@ -3103,12 +3096,11 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                     }
                 } else {
                     if let (peerId, threadId) = peerIdFromNotification(response.notification) {
-                        var messageId: MessageId? = nil
-                        if response.notification.request.content.categoryIdentifier == "c" || response.notification.request.content.categoryIdentifier == "t" {
-                            messageId = messageIdFromNotification(peerId: peerId, notification: response.notification)
-                        }
+                        let category = response.notification.request.content.categoryIdentifier
+                        let notificationMessageId = messageIdFromNotification(peerId: peerId, notification: response.notification)
+                        let messageId = category == "c" || category == "t" ? notificationMessageId : nil
                         let storyId = storyIdFromNotification(peerId: peerId, notification: response.notification)
-                        self.openChatWhenReady(accountId: accountId, peerId: peerId, threadId: threadId, messageId: messageId, storyId: storyId)
+                        self.openChatWhenReady(accountId: accountId, peerId: peerId, threadId: threadId, messageId: messageId, notificationMessageId: notificationMessageId, storyId: storyId)
                     }
                 }
                 completionHandler()
@@ -3479,14 +3471,15 @@ private func accountIdFromNotification(_ notification: UNNotification, sharedCon
 
 @available(iOS 10.0, *)
 private func peerIdFromNotification(_ notification: UNNotification) -> (peerId: PeerId, threadId: Int64?)? {
-    let threadId = notification.request.content.userInfo["threadId"] as? Int64
+    let payload = notification.request.content.userInfo
+    let threadId = notificationInteger(payload["threadId"]).flatMap { $0 > 0 ? $0 : nil }
+        ?? notificationInteger(payload["topic_id"]).flatMap { $0 > 0 ? $0 : nil }
     
     if let peerId = notification.request.content.userInfo["peerId"] as? Int64 {
         return (PeerId(peerId), threadId)
     } else if let peerIdString = notification.request.content.userInfo["peerId"] as? String, let peerId = Int64(peerIdString) {
         return (PeerId(peerId), threadId)
     } else {
-        let payload = notification.request.content.userInfo
         var peerId: PeerId?
         if let fromId = payload["from_id"] {
             let fromIdValue = fromId as! NSString
@@ -3516,9 +3509,18 @@ private func messageIdFromNotification(peerId: PeerId, notification: UNNotificat
         return MessageId(peerId: peerId, namespace: messageIdNamespace, id: messageIdId)
     }
     
-    if let msgId = payload["msg_id"] {
-        let msgIdValue = msgId as! NSString
-        return MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: Int32(msgIdValue.intValue))
+    if let value = notificationInteger(payload["msg_id"]), value > 0, let messageId = Int32(exactly: value) {
+        return MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: messageId)
+    }
+    return nil
+}
+
+private func notificationInteger(_ value: Any?) -> Int64? {
+    if let value = value as? Int64 {
+        return value
+    }
+    if let value = value as? String {
+        return Int64(value)
     }
     return nil
 }

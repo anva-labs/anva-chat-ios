@@ -30,6 +30,7 @@ swift_library(
         "//submodules/PersistentStringHash",
         "//submodules/GridMessageSelectionNode",
         "//submodules/AppBundle",
+        "//submodules/TelegramUI/Components/AnvaThreadsScreen",
         "//submodules/Markdown",
         "//submodules/WallpaperBackgroundNode",
         "//submodules/ChatPresentationInterfaceState",

@@ -1,19 +1,19 @@
 ---
 name: "\U0001F41E Bug Report"
-about: "Report a bug if something isn't working as expected in Telegram Messenger for iOS."
+about: "Report a bug in Anva Chat for iOS."
 title: ""
 labels: bug
 assignees: ""
 ---
 
-<!-- Thanks for reporting issues of Telegram Messenger for iOS! 
+<!-- Thanks for reporting issues in Anva Chat for iOS!
 This is a bug report template. Please, be as descriptive as possible. Issues lacking detail, or for any other reason than to report a bug, may be closed without action.
 
 First, complete the checklist by replacing the empty checkboxes [] with checked ones [x]. -->
 
 ### Checklist
 - [ ] I am reporting an issue in existing functionality that does not work as intended
-- [ ] I've searched for existing [GitHub issues](https://github.com/telegrammessenger/Telegram-iOS/issues)
+- [ ] I've searched for existing [Anva Chat issues](https://github.com/anva-labs/anva-chat-ios/issues)
 
 ### Description
 Describe the issue that you are experiencing
@@ -25,16 +25,16 @@ Tell us what should happen
 Tell us what happens instead
 
 ### Steps to Reproduce
-1. 
-2. 
-3. 
+1.
+2.
+3.
 
-### Screenshots and Videos 
+### Screenshots and Videos
 Remove, if not applicable
 
 ### Environment
-**Device:** `iPhone/iPad X`
+**Device or simulator:**
 
-**iOS version**: `13.X`
+**iOS version:**
 
-**App version:** `7.X`
+**App version and build:**

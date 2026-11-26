@@ -477,12 +477,9 @@ public class ShareRootControllerImpl {
                             } |> runOn(Queue.mainQueue())
                         }
                         
-                        let sentItems: ([EnginePeer.Id], [EnginePeer.Id: Int64], [EnginePeer.Id: StarsAmount], [PreparedShareItemContent], ShareControllerAccountContext, Bool, String) -> Signal<ShareControllerExternalStatus, NoError> = { peerIds, threadIds, requireStars, contents, account, silently, additionalText in
+                        let sentItems: ([EnginePeer.Id], [EnginePeer.Id: Int64], [EnginePeer.Id: StarsAmount], [PreparedShareItemContent], ShareControllerAccountContext, Bool, String) -> Signal<ShareControllerExternalStatus, ShareControllerError> = { peerIds, threadIds, requireStars, contents, account, silently, additionalText in
                             let sentItems = sentShareItems(accountPeerId: account.accountPeerId, postbox: account.stateManager.postbox, network: account.stateManager.network, stateManager: account.stateManager, auxiliaryMethods: makeTelegramAccountAuxiliaryMethods(uploadInBackground: nil), to: peerIds, threadIds: threadIds, requireStars: requireStars, items: contents, silently: silently, additionalText: additionalText)
-                            |> `catch` { _ -> Signal<
-                                Float, NoError> in
-                                return .complete()
-                            }
+                            |> mapError { _ -> ShareControllerError in .generic }
                             return sentItems
                             |> map { value -> ShareControllerExternalStatus in
                                 return .progress(value)
@@ -521,11 +518,9 @@ public class ShareRootControllerImpl {
                                         |> castError(ShareControllerError.self)
                                         |> mapToSignal { contents -> Signal<ShareControllerExternalStatus, ShareControllerError> in
                                             return sentItems(peerIds, threadIds, requireStars, contents, account, silently, additionalText)
-                                            |> castError(ShareControllerError.self)
                                         }
                                     case let .done(contents):
                                         return sentItems(peerIds, threadIds, requireStars, contents, account, silently, additionalText)
-                                        |> castError(ShareControllerError.self)
                                     }
                                 }
                             } else {

@@ -1362,7 +1362,8 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
     }
     
     public func updateChatLocation(chatLocation: ChatLocation) {
-        if self.chatLocation == chatLocation {
+        let previousChatLocation = self.chatLocation
+        if previousChatLocation == chatLocation {
             return
         }
         self.chatLocation = chatLocation
@@ -1370,7 +1371,11 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
         self.interactiveReadActionDisposable?.dispose()
         self.interactiveReadActionDisposable = nil
         
-        self.beginChatHistoryTransitions(resetScrolling: true, switchedToAnotherSource: false)
+        let preserveScrollAnchor = previousChatLocation.threadId != EngineMessage.newTopicThreadId
+        if !preserveScrollAnchor {
+            self.listView.releaseScrollHold()
+        }
+        self.beginChatHistoryTransitions(resetScrolling: true, preserveScrollAnchor: preserveScrollAnchor, switchedToAnotherSource: false)
         self.beginReadHistoryManagement()
     }
     
@@ -1426,7 +1431,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
     private let previousView = Atomic<(ChatHistoryView, Int, Set<MessageId>?, Int)?>(value: nil)
     private let previousHistoryAppearsCleared = Atomic<Bool?>(value: nil)
     
-    private func beginChatHistoryTransitions(resetScrolling: Bool, switchedToAnotherSource: Bool) {
+    private func beginChatHistoryTransitions(resetScrolling: Bool, preserveScrollAnchor: Bool = true, switchedToAnotherSource: Bool) {
         self.historyDisposable.set(nil)
         self._isReady.set(false)
         
@@ -1454,30 +1459,34 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
         
         var resetScrolling = resetScrolling
         if resetScrolling {
-            if let frozenMessageForScrollingReset = self.frozenMessageForScrollingReset {
+            if preserveScrollAnchor {
+                if let frozenMessageForScrollingReset = self.frozenMessageForScrollingReset {
+                    self.forEachVisibleMessageItemNode { itemNode in
+                        if resetScrollingMessageId != nil {
+                            return
+                        }
+                        if let item = itemNode.item, item.message.id == frozenMessageForScrollingReset, let itemFrame = self.listView.itemNodeFrame(itemNode) {
+                            let distanceToNode = self.insets.top - itemFrame.minY
+                            resetScrollingMessageId = (item.message.index, -distanceToNode)
+                        }
+                    }
+                }
+                
                 self.forEachVisibleMessageItemNode { itemNode in
                     if resetScrollingMessageId != nil {
                         return
                     }
-                    if let item = itemNode.item, item.message.id == frozenMessageForScrollingReset, let itemFrame = self.listView.itemNodeFrame(itemNode) {
+                    if let item = itemNode.item, let itemFrame = self.listView.itemNodeFrame(itemNode) {
                         let distanceToNode = self.insets.top - itemFrame.minY
                         resetScrollingMessageId = (item.message.index, -distanceToNode)
                     }
                 }
             }
             
-            self.forEachVisibleMessageItemNode { itemNode in
-                if resetScrollingMessageId != nil {
-                    return
-                }
-                if let item = itemNode.item, let itemFrame = self.listView.itemNodeFrame(itemNode) {
-                    let distanceToNode = self.insets.top - itemFrame.minY
-                    resetScrollingMessageId = (item.message.index, -distanceToNode)
-                }
-            }
-            
             if let resetScrollingMessageId {
                 self.chatHistoryLocationValue = ChatHistoryLocationInput(content: .Scroll(subject: MessageHistoryScrollToSubject(index: .message(resetScrollingMessageId.index), quote: nil), anchorIndex: .message(resetScrollingMessageId.index), sourceIndex: .message(resetScrollingMessageId.index), scrollPosition: .top(resetScrollingMessageId.offset), animated: false, highlight: false, setupReply: false), id: (self.chatHistoryLocationValue?.id).flatMap({ $0 + 1 }) ?? 0)
+            } else if !preserveScrollAnchor {
+                self.chatHistoryLocationValue = ChatHistoryLocationInput(content: .Scroll(subject: MessageHistoryScrollToSubject(index: .upperBound, quote: nil), anchorIndex: .upperBound, sourceIndex: .lowerBound, scrollPosition: .top(0.0), animated: false, highlight: false, setupReply: false), id: (self.chatHistoryLocationValue?.id).flatMap({ $0 + 1 }) ?? 0)
             } else {
                 self.chatHistoryLocationValue = ChatHistoryLocationInput(content: .Initial(count: historyMessageCount), id: (self.chatHistoryLocationValue?.id).flatMap({ $0 + 1 }) ?? 0)
             }

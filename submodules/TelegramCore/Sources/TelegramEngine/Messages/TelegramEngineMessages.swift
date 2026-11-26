@@ -632,6 +632,38 @@ public extension TelegramEngine {
             }
         }
 
+        public func botThreadSummaries(peerIds: Set<EnginePeer.Id>) -> Signal<[EnginePeer.Id: [Int64: EngineBotThreadSummary]], NoError> {
+            if peerIds.isEmpty {
+                return .single([:])
+            }
+            let sortedPeerIds = Array(peerIds)
+            let keys: [PostboxViewKey] = sortedPeerIds.map { peerId in
+                .messageHistoryThreadIndex(id: peerId, summaryComponents: ChatListEntrySummaryComponents(components: [:]))
+            }
+            return self.account.postbox.combinedView(keys: keys)
+            |> map { views -> [EnginePeer.Id: [Int64: EngineBotThreadSummary]] in
+                var result: [EnginePeer.Id: [Int64: EngineBotThreadSummary]] = [:]
+                for peerId in sortedPeerIds {
+                    let key: PostboxViewKey = .messageHistoryThreadIndex(id: peerId, summaryComponents: ChatListEntrySummaryComponents(components: [:]))
+                    if let view = views.views[key] as? MessageHistoryThreadIndexView {
+                        var peerThreads: [Int64: EngineBotThreadSummary] = [:]
+                        for item in view.items {
+                            let data = item.info.get(MessageHistoryThreadData.self)
+                            let topMessage = item.topMessage.map(EngineMessage.init)
+                            let timestamp = item.topMessage?.timestamp ?? item.index.timestamp
+                            peerThreads[item.id] = EngineBotThreadSummary(
+                                data: data,
+                                topMessage: topMessage,
+                                timestamp: timestamp
+                            )
+                        }
+                        result[peerId] = peerThreads
+                    }
+                }
+                return result
+            }
+        }
+
         public func callList(scope: EngineCallList.Scope, index: EngineMessage.Index, itemCount: Int) -> Signal<EngineCallList, NoError> {
             return self.account.viewTracker.callListView(
                 type: scope == .all ? .all : .missed,

@@ -179,13 +179,15 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
         public var url: String
         public var anchor: String?
         public var concealed: Bool
+        public var message: EngineRawMessage?
         public var progress: Promise<Bool>?
         
-        public init(webpageId: EngineMedia.Id, url: String, anchor: String?, concealed: Bool, progress: Promise<Bool>? = nil) {
+        public init(webpageId: EngineMedia.Id, url: String, anchor: String?, concealed: Bool, message: EngineRawMessage?, progress: Promise<Bool>? = nil) {
             self.webpageId = webpageId
             self.url = url
             self.anchor = anchor
             self.concealed = concealed
+            self.message = message
             self.progress = progress
         }
     }

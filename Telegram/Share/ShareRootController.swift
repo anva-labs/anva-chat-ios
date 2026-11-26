@@ -5,10 +5,13 @@ import BuildConfig
 import ShareExtensionContext
 import SwiftSignalKit
 import TelegramCore
+import Intents
+import TelegramIntents
 
 @objc(ShareRootController)
 class ShareRootController: UIViewController {
     private var impl: ShareRootControllerImpl?
+    private var suggestedBotPeerId: Int64?
     
     override init(nibName nibNameOrNil: String?, bundle nibBundleOrNil: Bundle?) {
         super.init(nibName: nibNameOrNil, bundle: nibBundleOrNil)
@@ -22,6 +25,13 @@ class ShareRootController: UIViewController {
     
     override func loadView() {
         super.loadView()
+
+        if #available(iOS 13.2, *),
+           let intent = self.extensionContext?.intent as? INSendMessageIntent,
+           let botPeerId = anvaBotShareSuggestionPeerId(conversationIdentifier: intent.conversationIdentifier) {
+            self.suggestedBotPeerId = botPeerId
+            return
+        }
         
         if self.impl == nil {
             let appBundleIdentifier = Bundle.main.bundleIdentifier!
@@ -81,6 +91,14 @@ class ShareRootController: UIViewController {
         
         self.impl?.loadView()
     }
+
+    override func viewIsAppearing(_ animated: Bool) {
+        super.viewIsAppearing(animated)
+        if let botPeerId = self.suggestedBotPeerId {
+            self.suggestedBotPeerId = nil
+            BotShareDraft.open(from: self, botPeerId: botPeerId)
+        }
+    }
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
@@ -103,18 +121,14 @@ class ShareRootController: UIViewController {
     }
     
     @objc func openURL(_ url: URL) -> Bool {
-        var responder: UIResponder? = self
-        while responder != nil {
-            if let application = responder as? UIApplication {
-                if #available(iOS 18.0, *) {
-                    application.open(url, options: [:], completionHandler: nil)
-                    return true
-                } else {
-                    return application.perform(#selector(openURL(_:)), with: url) != nil
-                }
-            }
-            responder = responder?.next
+        guard let application = extensionApplication(from: self) else {
+            return false
         }
-        return false
+        if #available(iOS 18.0, *) {
+            application.open(url, options: [:], completionHandler: nil)
+            return true
+        } else {
+            return application.perform(#selector(openURL(_:)), with: url) != nil
+        }
     }
 }
