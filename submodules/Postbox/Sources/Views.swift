@@ -101,7 +101,7 @@ public enum PostboxViewKey: Hashable {
     case story(id: StoryId)
     case savedMessagesIndex(peerId: PeerId)
     case savedMessagesStats(peerId: PeerId)
-    case chatInterfaceState(peerId: PeerId)
+    case chatInterfaceState(peerId: PeerId, threadId: Int64? = nil)
     case historyView(HistoryView)
     case typingDrafts(PeerAndThreadId)
     case allTypingDrafts
@@ -228,8 +228,9 @@ public enum PostboxViewKey: Hashable {
             hasher.combine(peerId)
         case let .savedMessagesStats(peerId):
             hasher.combine(peerId)
-        case let .chatInterfaceState(peerId):
+        case let .chatInterfaceState(peerId, threadId):
             hasher.combine(peerId)
+            hasher.combine(threadId)
         case let .historyView(historyView):
             hasher.combine(20)
             hasher.combine(historyView.peerId)
@@ -550,8 +551,8 @@ public enum PostboxViewKey: Hashable {
             } else {
                 return false
             }
-        case let .chatInterfaceState(peerId):
-            if case .chatInterfaceState(peerId) = rhs {
+        case let .chatInterfaceState(peerId, threadId):
+            if case .chatInterfaceState(peerId, threadId) = rhs {
                 return true
             } else {
                 return false
@@ -682,8 +683,8 @@ func postboxViewForKey(postbox: PostboxImpl, key: PostboxViewKey) -> MutablePost
         return MutableMessageHistorySavedMessagesIndexView(postbox: postbox, peerId: peerId)
     case let .savedMessagesStats(peerId):
         return MutableMessageHistorySavedMessagesStatsView(postbox: postbox, peerId: peerId)
-    case let .chatInterfaceState(peerId):
-        return MutableChatInterfaceStateView(postbox: postbox, peerId: peerId)
+    case let .chatInterfaceState(peerId, threadId):
+        return MutableChatInterfaceStateView(postbox: postbox, peerId: peerId, threadId: threadId)
     case let .historyView(historyView):
         return MutableMessageHistoryView(
             postbox: postbox,

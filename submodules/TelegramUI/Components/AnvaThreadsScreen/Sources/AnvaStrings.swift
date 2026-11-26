@@ -38,6 +38,19 @@ public struct AnvaStrings {
         return self.localized("Anva.Home")
     }
 
+    var draftLabel: String {
+        return self.strings.DialogList_Draft
+    }
+
+    func draftMediaLabel(_ mediaType: EngineChatList.MediaDraftContentType) -> String {
+        switch mediaType {
+        case .audio:
+            return self.strings.Message_Audio
+        case .video:
+            return self.strings.Message_VideoMessage
+        }
+    }
+
     var markAllAsRead: String {
         return self.localized("Anva.MarkAllAsRead", fallbackValue: self.strings.ChatList_Context_MarkAllAsRead)
     }

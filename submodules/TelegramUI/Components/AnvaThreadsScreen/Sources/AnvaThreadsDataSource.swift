@@ -71,6 +71,7 @@ public struct AnvaThreadListItem: Equatable {
     public let topicIconFileId: Int64?
     public let title: String
     public let previewText: String
+    public let draft: EngineBotChatDraft?
     public let lastActivityTimestamp: Int32
     public let unreadCount: Int
     public let isPinned: Bool
@@ -221,9 +222,10 @@ final class AnvaThreadsDataSource {
                 peersSignal,
                 forumSummariesSignal,
                 mainTopMessagesSignal,
-                mainReadCountersSignal
+                mainReadCountersSignal,
+                context.engine.messages.botChatDrafts(conversations: trackedItems.map { ($0.key.peerId, $0.key.threadId) })
             )
-            |> map { peersMap, forumSummaries, mainTopMessages, mainReadCounters -> AnvaThreadsSnapshot in
+            |> map { peersMap, forumSummaries, mainTopMessages, mainReadCounters, drafts -> AnvaThreadsSnapshot in
                 var listItems: [AnvaThreadListItem] = []
                 var totalUnread = 0
 
@@ -304,6 +306,7 @@ final class AnvaThreadsDataSource {
                         topicIconFileId: topicData?.info.icon,
                         title: title,
                         previewText: previewText,
+                        draft: drafts[peerId]?[tracked.key.threadId],
                         lastActivityTimestamp: lastActivityTimestamp,
                         unreadCount: unreadCount,
                         isPinned: tracked.isPinned,
