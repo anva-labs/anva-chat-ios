@@ -31,7 +31,7 @@ public final class AnvaThreadsScreen: ViewController, UITableViewDataSource, UIT
     private var filteredItems: [AnvaThreadListItem] = []
     private var searchQuery: String = ""
     private var messageSearchRequest: (query: String, keys: Set<AnvaTrackedThread.Key>)?
-    private var messageSearchPages: [AnvaTrackedThread.Key: AnvaThreadsDataSource.MessageSearchPage] = [:]
+    private var messageSearchPages: [EnginePeer.Id: AnvaThreadsDataSource.MessageSearchPage] = [:]
     private var messageMatches: [AnvaThreadsDataSource.MessageMatch] = []
     private var isLoadingMessageSearch = false
 
@@ -425,8 +425,7 @@ public final class AnvaThreadsScreen: ViewController, UITableViewDataSource, UIT
     }
 
     private func updateMessageSearch(query: String) {
-        let conversations = self.snapshot.items.map(\.key)
-        let keys = Set(conversations)
+        let keys = Set(self.snapshot.items.map(\.key))
         if query == self.messageSearchRequest?.query, keys == self.messageSearchRequest?.keys {
             return
         }
@@ -436,16 +435,15 @@ public final class AnvaThreadsScreen: ViewController, UITableViewDataSource, UIT
         self.messageSearchPages = [:]
         self.messageMatches = []
         self.isLoadingMessageSearch = false
-        guard !query.isEmpty, !conversations.isEmpty else {
+        guard !query.isEmpty, !keys.isEmpty else {
             self.activeSearchBarNode?.activity = false
             return
         }
 
-        self.loadMessageSearchPage(query: query, conversations: conversations, debounce: true)
+        self.loadMessageSearchPage(query: query, keys: keys, debounce: true)
     }
 
-    private func loadMessageSearchPage(query: String, conversations: [AnvaTrackedThread.Key], debounce: Bool) {
-        let keys = Set(conversations)
+    private func loadMessageSearchPage(query: String, keys: Set<AnvaTrackedThread.Key>, debounce: Bool) {
         let pages = self.messageSearchPages
         self.isLoadingMessageSearch = true
         self.activeSearchBarNode?.activity = true
@@ -453,13 +451,17 @@ public final class AnvaThreadsScreen: ViewController, UITableViewDataSource, UIT
         let querySignal = Signal<String, NoError>.single(query)
         let scheduledQuery = debounce ? (querySignal |> delay(0.3, queue: .mainQueue())) : querySignal
         self.messageSearchDisposable.set((scheduledQuery
-        |> mapToSignal { dataSource.searchMessages(query: $0, conversations: conversations, pages: pages) }
+        |> mapToSignal { dataSource.searchMessages(query: $0, visibleThreads: keys, pages: pages) }
         |> deliverOnMainQueue).startStrict(next: { [weak self] pages in
             guard let self, self.messageSearchRequest?.query == query, self.messageSearchRequest?.keys == keys else {
                 return
             }
             self.messageSearchPages = pages
             self.messageMatches = AnvaThreadsDataSource.MessageSearchPage.orderedMatches(in: pages)
+            if self.messageMatches.isEmpty, pages.values.contains(where: \.hasMore) {
+                self.loadMessageSearchPage(query: query, keys: keys, debounce: false)
+                return
+            }
             self.isLoadingMessageSearch = false
             self.activeSearchBarNode?.activity = false
             self.reloadRows()
@@ -477,7 +479,7 @@ public final class AnvaThreadsScreen: ViewController, UITableViewDataSource, UIT
         }
         let visibleBottom = self.tableView.contentOffset.y + self.tableView.bounds.height - self.tableView.contentInset.bottom
         if visibleBottom >= self.tableView.contentSize.height - AnvaThreadRowCell.rowHeight {
-            self.loadMessageSearchPage(query: request.query, conversations: self.snapshot.items.map(\.key), debounce: false)
+            self.loadMessageSearchPage(query: request.query, keys: request.keys, debounce: false)
         }
     }
 
