@@ -129,6 +129,7 @@ public final class AnvaThreadsScreen: ViewController, UITableViewDataSource, UIT
         self.tableView.rowHeight = AnvaThreadRowCell.rowHeight
         self.tableView.keyboardDismissMode = .onDrag
         self.tableView.contentInsetAdjustmentBehavior = .never
+        self.tableView.scrollsToTop = false
         self.tableView.register(AnvaThreadRowCell.self, forCellReuseIdentifier: AnvaThreadRowCell.reuseIdentifier)
 
         self.emptyView.onAction = { [weak self] in
